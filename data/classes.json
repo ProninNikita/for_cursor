@@ -1,0 +1,44 @@
+{
+  "classes": {
+    "warrior": {
+      "name": "Воин",
+      "base_stats": {"hp": 38, "atk": 7, "def": 4, "speed": 4, "magic": 0, "initiative": 5},
+      "base_abilities": ["basic_attack", "heavy_strike", "guard"]
+    },
+    "mage": {
+      "name": "Маг",
+      "base_stats": {"hp": 22, "atk": 2, "def": 2, "speed": 5, "magic": 8, "initiative": 5},
+      "base_abilities": ["fireball", "arcane_bolt", "barrier"]
+    },
+    "healer": {
+      "name": "Лекарь",
+      "base_stats": {"hp": 26, "atk": 2, "def": 3, "speed": 4, "magic": 6, "initiative": 4},
+      "base_abilities": ["heal", "cure", "blessing"]
+    },
+    "scout": {
+      "name": "Разведчик",
+      "base_stats": {"hp": 28, "atk": 5, "def": 3, "speed": 7, "magic": 0, "initiative": 6},
+      "base_abilities": ["quick_strike", "evade", "mark_target"]
+    },
+    "defender": {
+      "name": "Защитник",
+      "base_stats": {"hp": 44, "atk": 4, "def": 7, "speed": 2, "magic": 0, "initiative": 3},
+      "base_abilities": ["shield_bash", "taunt", "fortify"]
+    },
+    "berserker": {
+      "name": "Берсерк",
+      "base_stats": {"hp": 32, "atk": 9, "def": 2, "speed": 5, "magic": 0, "initiative": 5},
+      "base_abilities": ["frenzy", "bloodlust", "reckless_charge"]
+    },
+    "tactician": {
+      "name": "Тактик",
+      "base_stats": {"hp": 30, "atk": 4, "def": 4, "speed": 6, "magic": 3, "initiative": 6},
+      "base_abilities": ["command", "tactical_strike", "rally"]
+    },
+    "assassin": {
+      "name": "Ассасин",
+      "base_stats": {"hp": 24, "atk": 8, "def": 2, "speed": 8, "magic": 0, "initiative": 7},
+      "base_abilities": ["backstab", "poison_blade", "shadow_step"]
+    }
+  }
+}

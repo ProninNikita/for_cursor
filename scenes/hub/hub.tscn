@@ -1,0 +1,292 @@
+[gd_scene load_steps=4 format=3 uid="uid://hub_scene"]
+
+[ext_resource type="Script" path="res://scripts/hub/hub.gd" id="1_hub"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.12, 0.14, 0.18, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_btn"]
+bg_color = Color(0.25, 0.3, 0.38, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.4, 0.5, 0.6, 1)
+corner_radius_top_left = 8
+corner_radius_top_right = 8
+corner_radius_bottom_right = 8
+corner_radius_bottom_left = 8
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.2, 0.24, 0.3, 0.95)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.35, 0.42, 0.52, 1)
+corner_radius_top_left = 12
+corner_radius_top_right = 12
+corner_radius_bottom_right = 12
+corner_radius_bottom_left = 12
+
+[node name="Hub" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_hub")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -200.0
+offset_top = 25.0
+offset_right = 200.0
+offset_bottom = 75.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.92, 0.88, 0.75, 1)
+theme_override_font_sizes/font_size = 38
+text = "Squad Tactics"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="Subtitle" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -120.0
+offset_top = 70.0
+offset_right = 120.0
+offset_bottom = 95.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.6, 0.58, 0.52, 1)
+theme_override_font_sizes/font_size = 16
+text = "Город-хаб"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -160.0
+offset_top = 10.0
+offset_right = -20.0
+offset_bottom = 50.0
+grow_horizontal = 0
+theme_override_constants/separation = 10
+
+[node name="SaveBtn" type="Button" parent="TopBar"]
+layout_mode = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_btn")
+theme_override_styles/hover = SubResource("StyleBoxFlat_btn")
+theme_override_styles/pressed = SubResource("StyleBoxFlat_btn")
+theme_override_styles/focus = SubResource("StyleBoxFlat_btn")
+text = "Сохранить игру"
+
+[node name="BuildingsGrid" type="GridContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -540.0
+offset_top = -170.0
+offset_right = 540.0
+offset_bottom = 170.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/h_separation = 28
+theme_override_constants/v_separation = 28
+columns = 5
+
+[node name="Portal" type="PanelContainer" parent="BuildingsGrid"]
+custom_minimum_size = Vector2(190, 220)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="BuildingsGrid/Portal"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="BuildingsGrid/Portal/VBox"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.5, 0.4, 0.8, 1)
+
+[node name="Name" type="Label" parent="BuildingsGrid/Portal/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "Портал"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="BuildingsGrid/Portal/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 13
+text = "Призыв героев"
+horizontal_alignment = 1
+
+[node name="Btn" type="Button" parent="BuildingsGrid/Portal/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Войти"
+
+[node name="Tower" type="PanelContainer" parent="BuildingsGrid"]
+custom_minimum_size = Vector2(190, 220)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="BuildingsGrid/Tower"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="BuildingsGrid/Tower/VBox"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.6, 0.35, 0.25, 1)
+
+[node name="Name" type="Label" parent="BuildingsGrid/Tower/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "Башня"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="BuildingsGrid/Tower/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 13
+text = "В бой"
+horizontal_alignment = 1
+
+[node name="Btn" type="Button" parent="BuildingsGrid/Tower/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Войти"
+
+[node name="Workshop" type="PanelContainer" parent="BuildingsGrid"]
+custom_minimum_size = Vector2(190, 220)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="BuildingsGrid/Workshop"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="BuildingsGrid/Workshop/VBox"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.55, 0.45, 0.35, 1)
+
+[node name="Name" type="Label" parent="BuildingsGrid/Workshop/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "Мастерская"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="BuildingsGrid/Workshop/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 13
+text = "Крафт предметов"
+horizontal_alignment = 1
+
+[node name="Btn" type="Button" parent="BuildingsGrid/Workshop/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Войти"
+
+[node name="Mansion" type="PanelContainer" parent="BuildingsGrid"]
+custom_minimum_size = Vector2(190, 220)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="BuildingsGrid/Mansion"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="BuildingsGrid/Mansion/VBox"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.45, 0.35, 0.5, 1)
+
+[node name="Name" type="Label" parent="BuildingsGrid/Mansion/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "Особняк"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="BuildingsGrid/Mansion/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 13
+text = "Отдых и общение"
+horizontal_alignment = 1
+
+[node name="Btn" type="Button" parent="BuildingsGrid/Mansion/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Войти"
+
+[node name="TrainingGround" type="PanelContainer" parent="BuildingsGrid"]
+custom_minimum_size = Vector2(190, 220)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="BuildingsGrid/TrainingGround"]
+layout_mode = 2
+theme_override_constants/separation = 10
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="BuildingsGrid/TrainingGround/VBox"]
+custom_minimum_size = Vector2(70, 70)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.35, 0.5, 0.4, 1)
+
+[node name="Name" type="Label" parent="BuildingsGrid/TrainingGround/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 20
+text = "Тренировочная"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="BuildingsGrid/TrainingGround/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 13
+text = "Площадка"
+horizontal_alignment = 1
+
+[node name="Btn" type="Button" parent="BuildingsGrid/TrainingGround/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Войти"

@@ -1,0 +1,134 @@
+{
+  "floors": {
+    "1": {
+      "name": "Первый этаж",
+      "description": "Начало восхождения. Легкие противники.",
+      "enemies": [
+        { "type": "goblin", "count": 2 }
+      ],
+      "reward": {
+        "lootboxes": 1,
+        "gold": 10
+      }
+    },
+    "2": {
+      "name": "Второй этаж",
+      "description": "Гоблинов становится больше.",
+      "enemies": [
+        { "type": "goblin", "count": 3 }
+      ],
+      "reward": {
+        "lootboxes": 1,
+        "gold": 20
+      }
+    },
+    "3": {
+      "name": "Третий этаж",
+      "description": "Появляются первые орки.",
+      "enemies": [
+        { "type": "goblin", "count": 2 },
+        { "type": "orc", "count": 1 }
+      ],
+      "reward": {
+        "lootboxes": 2,
+        "gold": 35
+      }
+    },
+    "4": {
+      "name": "Четвёртый этаж",
+      "description": "Орки укрепляются.",
+      "enemies": [
+        { "type": "goblin", "count": 1 },
+        { "type": "orc", "count": 2 }
+      ],
+      "reward": {
+        "lootboxes": 2,
+        "gold": 50
+      }
+    },
+    "5": {
+      "name": "Пятый этаж",
+      "description": "Первый серьёзный вызов.",
+      "enemies": [
+        { "type": "goblin", "count": 2 },
+        { "type": "orc", "count": 2 }
+      ],
+      "reward": {
+        "lootboxes": 2,
+        "gold": 75
+      }
+    },
+    "6": {
+      "name": "Шестой этаж",
+      "description": "Орки доминируют.",
+      "enemies": [
+        { "type": "orc", "count": 3 }
+      ],
+      "reward": {
+        "lootboxes": 3,
+        "gold": 100
+      }
+    },
+    "7": {
+      "name": "Седьмой этаж",
+      "description": "Появляются тролли.",
+      "enemies": [
+        { "type": "orc", "count": 2 },
+        { "type": "troll", "count": 1 }
+      ],
+      "reward": {
+        "lootboxes": 3,
+        "gold": 125
+      }
+    },
+    "8": {
+      "name": "Восьмой этаж",
+      "description": "Смешанные отряды врагов.",
+      "enemies": [
+        { "type": "goblin", "count": 2 },
+        { "type": "orc", "count": 1 },
+        { "type": "troll", "count": 1 }
+      ],
+      "reward": {
+        "lootboxes": 3,
+        "gold": 150
+      }
+    },
+    "9": {
+      "name": "Девятый этаж",
+      "description": "Последнее испытание перед вершиной.",
+      "enemies": [
+        { "type": "orc", "count": 3 },
+        { "type": "troll", "count": 1 }
+      ],
+      "reward": {
+        "lootboxes": 4,
+        "gold": 200
+      }
+    },
+    "10": {
+      "name": "Десятый этаж",
+      "description": "Вершина Возвышения. Босс ждёт.",
+      "enemies": [
+        { "type": "troll", "count": 2 },
+        { "type": "boss", "count": 1 }
+      ],
+      "reward": {
+        "lootboxes": 5,
+        "gold": 500,
+        "unique_item": true
+      }
+    },
+    "11": {
+      "name": "Этаж 11 - За пределами",
+      "description": "То, что выше вершин...",
+      "enemies": [
+        { "type": "boss", "count": 1 }
+      ],
+      "reward": {
+        "lootboxes": 3,
+        "gold": 150
+      }
+    }
+  }
+}

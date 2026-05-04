@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --headless --check-only --path /Users/likit/for_cursor)",
+      "Bash(python3 -m json.tool)",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --path /Users/likit/for_cursor --editor)",
+      "Bash(pkill -9 -f \"Godot\")",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --path /Users/likit/for_cursor)",
+      "Bash(godot --path /Users/likit/for_cursor --editor)",
+      "Bash(kill 29005)",
+      "Read(//Users/likit/.godot/app_userdata/logs/**)",
+      "Bash(pkill -f \"Godot.*--path.*for_cursor\")",
+      "Bash(/Applications/Godot.app/Contents/MacOS/Godot --path /Users/likit/for_cursor --headless --quit)"
+    ]
+  }
+}

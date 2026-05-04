@@ -1,0 +1,12 @@
+{
+  "traits": [
+    {"id": "aggressive", "name": "агрессивный", "class_weight": {"warrior": 3, "berserker": 3, "assassin": 2}, "stat_bonus": {"atk": 1, "def": -1}},
+    {"id": "cautious", "name": "осторожный", "class_weight": {"tactician": 3, "defender": 3, "scout": 2}, "stat_bonus": {"def": 1, "atk": -1}},
+    {"id": "mystical", "name": "мистический", "class_weight": {"mage": 3, "healer": 2}, "stat_bonus": {"magic": 1, "def": -1}},
+    {"id": "compassionate", "name": "сострадательный", "class_weight": {"healer": 3, "defender": 2}, "stat_bonus": {"healing": 1}},
+    {"id": "reckless", "name": "безрассудный", "class_weight": {"berserker": 3, "warrior": 2}, "stat_bonus": {"atk": 1, "hp": -3}},
+    {"id": "calculating", "name": "расчётливый", "class_weight": {"tactician": 3, "assassin": 2, "mage": 1}, "stat_bonus": {"speed": 1}},
+    {"id": "loner", "name": "одиночка", "class_weight": {"scout": 3, "assassin": 2}, "stat_bonus": {"speed": 1}},
+    {"id": "protective", "name": "защитник", "class_weight": {"defender": 3, "warrior": 1}, "stat_bonus": {"def": 1, "hp": 3}}
+  ]
+}

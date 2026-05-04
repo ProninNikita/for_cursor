@@ -1,0 +1,182 @@
+[gd_scene load_steps=4 format=3 uid="uid://tower_lobby"]
+
+[ext_resource type="Script" path="res://scripts/tower/tower_lobby.gd" id="1_tower_lobby"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.12, 0.14, 0.18, 1)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_card"]
+bg_color = Color(0.2, 0.24, 0.3, 0.95)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.6, 0.35, 0.25, 1)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+
+[node name="TowerLobby" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_tower_lobby")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -150.0
+offset_top = 30.0
+offset_right = 150.0
+offset_bottom = 80.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.92, 0.88, 0.75, 1)
+theme_override_font_sizes/font_size = 42
+text = "Башня"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -160.0
+offset_top = 10.0
+offset_right = -20.0
+offset_bottom = 50.0
+grow_horizontal = 0
+
+[node name="BackBtn" type="Button" parent="TopBar"]
+layout_mode = 2
+text = "Назад в хаб"
+
+[node name="Main" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 8
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -400.0
+offset_top = -150.0
+offset_right = 400.0
+offset_bottom = 150.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 30
+
+[node name="Subtitle" type="Label" parent="Main"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.68, 0.62, 1)
+theme_override_font_sizes/font_size = 18
+text = "Выбери режим:"
+horizontal_alignment = 1
+
+[node name="HBox" type="HBoxContainer" parent="Main"]
+layout_mode = 2
+theme_override_constants/separation = 40
+
+[node name="ElevationPanel" type="PanelContainer" parent="Main/HBox"]
+custom_minimum_size = Vector2(280, 300)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="Main/HBox/ElevationPanel"]
+layout_mode = 2
+theme_override_constants/separation = 15
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="Main/HBox/ElevationPanel/VBox"]
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.6, 0.35, 0.25, 1)
+
+[node name="Name" type="Label" parent="Main/HBox/ElevationPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 24
+text = "Возвышение"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="Main/HBox/ElevationPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 14
+text = "Многоэтажная башня
+с возрастающей
+сложностью"
+horizontal_alignment = 1
+
+[node name="Info" type="Label" parent="Main/HBox/ElevationPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+text = "Текущий этаж: 1
+Максимальный: 1"
+horizontal_alignment = 1
+
+[node name="ElevationBtn" type="Button" parent="Main/HBox/ElevationPanel/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Войти"
+
+[node name="RaidPanel" type="PanelContainer" parent="Main/HBox"]
+custom_minimum_size = Vector2(280, 300)
+layout_mode = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_card")
+
+[node name="VBox" type="VBoxContainer" parent="Main/HBox/RaidPanel"]
+layout_mode = 2
+theme_override_constants/separation = 15
+alignment = 1
+
+[node name="Icon" type="ColorRect" parent="Main/HBox/RaidPanel/VBox"]
+custom_minimum_size = Vector2(80, 80)
+layout_mode = 2
+size_flags_horizontal = 4
+color = Color(0.35, 0.5, 0.4, 1)
+
+[node name="Name" type="Label" parent="Main/HBox/RaidPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(1, 1, 1, 1)
+theme_override_font_sizes/font_size = 24
+text = "Вылазка"
+horizontal_alignment = 1
+
+[node name="Desc" type="Label" parent="Main/HBox/RaidPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.78, 0.78, 0.78, 1)
+theme_override_font_sizes/font_size = 14
+text = "Длительное
+путешествие для
+сбора ресурсов"
+horizontal_alignment = 1
+
+[node name="Info" type="Label" parent="Main/HBox/RaidPanel/VBox"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+text = "Нет активных вылазок"
+horizontal_alignment = 1
+
+[node name="RaidBtn" type="Button" parent="Main/HBox/RaidPanel/VBox"]
+layout_mode = 2
+size_flags_horizontal = 4
+text = "Начать"

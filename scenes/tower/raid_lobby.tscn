@@ -1,0 +1,197 @@
+[gd_scene load_steps=3 format=3 uid="uid://raid_lobby"]
+
+[ext_resource type="Script" path="res://scripts/tower/raid_lobby.gd" id="1_raid_lobby"]
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bg"]
+bg_color = Color(0.12, 0.14, 0.18, 1)
+
+[node name="RaidLobby" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_raid_lobby")
+
+[node name="Background" type="Panel" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = SubResource("StyleBoxFlat_bg")
+
+[node name="Title" type="Label" parent="."]
+layout_mode = 1
+anchors_preset = 5
+anchor_left = 0.5
+anchor_right = 0.5
+offset_left = -150.0
+offset_top = 30.0
+offset_right = 150.0
+offset_bottom = 80.0
+grow_horizontal = 2
+theme_override_colors/font_color = Color(0.92, 0.88, 0.75, 1)
+theme_override_font_sizes/font_size = 38
+text = "Вылазка"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="TopBar" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 1
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -160.0
+offset_top = 10.0
+offset_right = -20.0
+offset_bottom = 50.0
+grow_horizontal = 0
+
+[node name="BackBtn" type="Button" parent="TopBar"]
+layout_mode = 2
+text = "Назад"
+
+[node name="Main" type="HBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 50.0
+offset_top = 100.0
+offset_right = -50.0
+offset_bottom = -80.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/separation = 30
+
+[node name="LeftPanel" type="VBoxContainer" parent="Main"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 20
+
+[node name="Options" type="VBoxContainer" parent="Main/LeftPanel"]
+layout_mode = 2
+theme_override_constants/separation = 15
+
+[node name="SectionTitle" type="Label" parent="Main/LeftPanel/Options"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 18
+text = "Параметры вылазки"
+
+[node name="Duration" type="VBoxContainer" parent="Main/LeftPanel/Options"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Label" type="Label" parent="Main/LeftPanel/Options/Duration"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.78, 0.72, 1)
+theme_override_font_sizes/font_size = 14
+text = "Длительность:"
+
+[node name="2H" type="CheckBox" parent="Main/LeftPanel/Options/Duration"]
+layout_mode = 2
+text = "2 часа"
+
+[node name="6H" type="CheckBox" parent="Main/LeftPanel/Options/Duration"]
+layout_mode = 2
+text = "6 часов"
+
+[node name="12H" type="CheckBox" parent="Main/LeftPanel/Options/Duration"]
+layout_mode = 2
+text = "12 часов"
+
+[node name="24H" type="CheckBox" parent="Main/LeftPanel/Options/Duration"]
+layout_mode = 2
+text = "24 часа"
+
+[node name="Difficulty" type="VBoxContainer" parent="Main/LeftPanel/Options"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Label" type="Label" parent="Main/LeftPanel/Options/Difficulty"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.78, 0.72, 1)
+theme_override_font_sizes/font_size = 14
+text = "Сложность:"
+
+[node name="Easy" type="CheckBox" parent="Main/LeftPanel/Options/Difficulty"]
+layout_mode = 2
+text = "Легко"
+
+[node name="Normal" type="CheckBox" parent="Main/LeftPanel/Options/Difficulty"]
+layout_mode = 2
+text = "Нормально"
+
+[node name="Hard" type="CheckBox" parent="Main/LeftPanel/Options/Difficulty"]
+layout_mode = 2
+text = "Сложно"
+
+[node name="Type" type="VBoxContainer" parent="Main/LeftPanel/Options"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="Label" type="Label" parent="Main/LeftPanel/Options/Type"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.8, 0.78, 0.72, 1)
+theme_override_font_sizes/font_size = 14
+text = "Тип:"
+
+[node name="Hunt" type="CheckBox" parent="Main/LeftPanel/Options/Type"]
+layout_mode = 2
+text = "Охота (больше ресурсов)"
+
+[node name="Scout" type="CheckBox" parent="Main/LeftPanel/Options/Type"]
+layout_mode = 2
+text = "Разведка (меньше ресурсов)"
+
+[node name="Caravan" type="CheckBox" parent="Main/LeftPanel/Options/Type"]
+layout_mode = 2
+text = "Караван (баланс)"
+
+[node name="RewardsPanel" type="PanelContainer" parent="Main/LeftPanel"]
+layout_mode = 2
+
+[node name="Info" type="Label" parent="Main/LeftPanel/RewardsPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 13
+text = "Ожидаемые награды:
+• 2 лутбокса
+• 75 золота
+
+⚠️ ВНИМАНИЕ: Смерть в вылазке = постоянная смерть!"
+
+[node name="RightPanel" type="VBoxContainer" parent="Main"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 15
+
+[node name="SectionTitle" type="Label" parent="Main/RightPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.9, 0.85, 0.7, 1)
+theme_override_font_sizes/font_size = 18
+text = "Выбери отряд (1-3 героя)"
+
+[node name="SquadContainer" type="ScrollContainer" parent="Main/RightPanel"]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="List" type="VBoxContainer" parent="Main/RightPanel/SquadContainer"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 8
+
+[node name="Hint" type="Label" parent="Main/RightPanel"]
+layout_mode = 2
+theme_override_colors/font_color = Color(0.7, 0.68, 0.62, 1)
+theme_override_font_sizes/font_size = 14
+text = "Выбери отряд (1-3 героя) и отправь в вылазку."
+
+[node name="StartBtn" type="Button" parent="Main/RightPanel"]
+layout_mode = 2
+text = "Отправить в вылазку"

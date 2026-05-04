@@ -1,0 +1,283 @@
+{
+  "abilities": {
+    "basic_attack": {
+      "id": "basic_attack",
+      "name": "Базовая атака",
+      "description": "Физическая атака противника.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.0,
+      "cooldown": 0
+    },
+    "heavy_strike": {
+      "id": "heavy_strike",
+      "name": "Тяжёлый удар",
+      "description": "Мощный удар с шансом оглушить противника.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.5,
+      "cooldown": 2,
+      "effects": ["stun_chance_25"]
+    },
+    "guard": {
+      "id": "guard",
+      "name": "Защитная стойка",
+      "description": "Повышает защиту на этот ход.",
+      "type": "buff",
+      "target_type": "self",
+      "stat_used": "def",
+      "power": 1.0,
+      "cooldown": 1,
+      "effects": ["def_buff_3"]
+    },
+    "fireball": {
+      "id": "fireball",
+      "name": "Огненный шар",
+      "description": "Мощный магический удар по всем врагам.",
+      "type": "damage",
+      "target_type": "all_enemies",
+      "stat_used": "magic",
+      "power": 1.2,
+      "cooldown": 3
+    },
+    "arcane_bolt": {
+      "id": "arcane_bolt",
+      "name": "Аркан-молот",
+      "description": "Сконцентрированный магический удар.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "magic",
+      "power": 1.8,
+      "cooldown": 2
+    },
+    "barrier": {
+      "id": "barrier",
+      "name": "Магический барьер",
+      "description": "Создаёт щит, поглощающий урон.",
+      "type": "buff",
+      "target_type": "single_ally",
+      "stat_used": "magic",
+      "power": 1.0,
+      "cooldown": 2,
+      "effects": ["def_buff_5"]
+    },
+    "heal": {
+      "id": "heal",
+      "name": "Лечение",
+      "description": "Восстанавливает HP союзнику.",
+      "type": "heal",
+      "target_type": "single_ally",
+      "stat_used": "magic",
+      "power": 1.5,
+      "cooldown": 1
+    },
+    "cure": {
+      "id": "cure",
+      "name": "Очищение",
+      "description": "Снимает отрицательные эффекты и лечит.",
+      "type": "special",
+      "target_type": "single_ally",
+      "stat_used": "magic",
+      "power": 1.0,
+      "cooldown": 2,
+      "effects": ["cleanse"]
+    },
+    "blessing": {
+      "id": "blessing",
+      "name": "Благословение",
+      "description": "Усиливает атаку и защиту союзника.",
+      "type": "buff",
+      "target_type": "single_ally",
+      "stat_used": "magic",
+      "power": 1.0,
+      "cooldown": 3,
+      "effects": ["atk_buff_2", "def_buff_2"]
+    },
+    "quick_strike": {
+      "id": "quick_strike",
+      "name": "Быстрый удар",
+      "description": "Быстрая атака с повышенным критическим шансом.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.1,
+      "cooldown": 1
+    },
+    "evade": {
+      "id": "evade",
+      "name": "Уклонение",
+      "description": "Повышает шанс уклонения от атак.",
+      "type": "buff",
+      "target_type": "self",
+      "stat_used": "speed",
+      "power": 1.0,
+      "cooldown": 2,
+      "effects": ["evade_buff"]
+    },
+    "mark_target": {
+      "id": "mark_target",
+      "name": "Метка цели",
+      "description": "Помечает цель - она получает больше урона.",
+      "type": "debuff",
+      "target_type": "single_enemy",
+      "stat_used": "speed",
+      "power": 1.0,
+      "cooldown": 2,
+      "effects": ["mark_debuff"]
+    },
+    "shield_bash": {
+      "id": "shield_bash",
+      "name": "Удар щитом",
+      "description": "Атака щитом с шансом оглушить.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "def",
+      "power": 1.2,
+      "cooldown": 2,
+      "effects": ["stun_chance_20"]
+    },
+    "taunt": {
+      "id": "taunt",
+      "name": "Насмешка",
+      "description": "Принуждает врагов атаковать вас.",
+      "type": "special",
+      "target_type": "self",
+      "stat_used": "def",
+      "power": 1.0,
+      "cooldown": 2,
+      "effects": ["taunt"]
+    },
+    "fortify": {
+      "id": "fortify",
+      "name": "Укрепление",
+      "description": "Значительно повышает защиту.",
+      "type": "buff",
+      "target_type": "self",
+      "stat_used": "def",
+      "power": 1.0,
+      "cooldown": 3,
+      "effects": ["def_buff_6"]
+    },
+    "frenzy": {
+      "id": "frenzy",
+      "name": "Бешенство",
+      "description": "Атакует всех врагов, но понижает защиту.",
+      "type": "damage",
+      "target_type": "all_enemies",
+      "stat_used": "atk",
+      "power": 0.8,
+      "cooldown": 3,
+      "effects": ["self_def_debuff_2"]
+    },
+    "bloodlust": {
+      "id": "bloodlust",
+      "name": "Кровожадность",
+      "description": "Мощная атака, которая восстанавливает HP при нанесении урона.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.6,
+      "cooldown": 2,
+      "effects": ["lifesteal_50"]
+    },
+    "reckless_charge": {
+      "id": "reckless_charge",
+      "name": "Безрассудный натиск",
+      "description": "Очень мощная атака, но понижает защиту.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 2.0,
+      "cooldown": 3,
+      "effects": ["self_def_debuff_3"]
+    },
+    "command": {
+      "id": "command",
+      "name": "Команда",
+      "description": "Повышает инициативу всех союзников.",
+      "type": "buff",
+      "target_type": "all_allies",
+      "stat_used": "speed",
+      "power": 1.0,
+      "cooldown": 3,
+      "effects": ["initiative_buff_2"]
+    },
+    "tactical_strike": {
+      "id": "tactical_strike",
+      "name": "Тактический удар",
+      "description": "Точная атака по слабому месту.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.3,
+      "cooldown": 2
+    },
+    "rally": {
+      "id": "rally",
+      "name": "Сбор",
+      "description": "Восстанавливает HP всем союзникам.",
+      "type": "heal",
+      "target_type": "all_allies",
+      "stat_used": "magic",
+      "power": 0.8,
+      "cooldown": 3
+    },
+    "backstab": {
+      "id": "backstab",
+      "name": "Удар в спину",
+      "description": "Мощная атака с высокой вероятностью крита.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 2.2,
+      "cooldown": 3
+    },
+    "poison_blade": {
+      "id": "poison_blade",
+      "name": "Отравленное лезвие",
+      "description": "Атака, которая отравляет цель.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.0,
+      "cooldown": 2,
+      "effects": ["poison_3"]
+    },
+    "shadow_step": {
+      "id": "shadow_step",
+      "name": "Шаг тени",
+      "description": "Телепортация за врагом и мощная атака.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.8,
+      "cooldown": 2,
+      "effects": ["evade_buff"]
+    }
+  },
+  "enemy_abilities": {
+    "goblin_basic_attack": {
+      "id": "goblin_basic_attack",
+      "name": "Укус гоблина",
+      "description": "Простая атака гоблина.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 1.0,
+      "cooldown": 0
+    },
+    "goblin_poison_strike": {
+      "id": "goblin_poison_strike",
+      "name": "Ядовитый кинжал",
+      "description": "Атака отравленным кинжалом.",
+      "type": "damage",
+      "target_type": "single_enemy",
+      "stat_used": "atk",
+      "power": 0.8,
+      "cooldown": 3,
+      "effects": ["poison_2"]
+    }
+  }
+}

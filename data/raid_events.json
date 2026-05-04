@@ -1,0 +1,106 @@
+{
+  "events": {
+    "ambush_weak": {
+      "name": "Засада!",
+      "description": "На отряд напали гоблины!",
+      "type": "combat",
+      "enemies": [
+        { "type": "goblin", "count": 2 }
+      ],
+      "difficulty": 0.8
+    },
+    "ambush_medium": {
+      "name": "Орки перехватили!",
+      "description": "Орочий патруль застал врасплох.",
+      "type": "combat",
+      "enemies": [
+        { "type": "orc", "count": 2 }
+      ],
+      "difficulty": 1.0
+    },
+    "ambush_strong": {
+      "name": "Тяжёлая засада",
+      "description": "На отряд напали тролли!",
+      "type": "combat",
+      "enemies": [
+        { "type": "troll", "count": 1 },
+        { "type": "orc", "count": 1 }
+      ],
+      "difficulty": 1.3
+    },
+    "treasure_small": {
+      "name": "Сокровищница",
+      "description": "Найден небольшой сундук с ресурсами.",
+      "type": "reward",
+      "rewards": {
+        "gold": 30
+      }
+    },
+    "treasure_medium": {
+      "name": "Запасы торговцев",
+      "description": "Найдены запасы потерянного каравана.",
+      "type": "reward",
+      "rewards": {
+        "gold": 75,
+        "lootboxes": 1
+      }
+    },
+    "treasure_large": {
+      "name": "Древнее захоронение",
+      "description": "Найдены артефакты древних.",
+      "type": "reward",
+      "rewards": {
+        "gold": 150,
+        "lootboxes": 2
+      }
+    },
+    "rest": {
+      "name": "Привал",
+      "description": "Отряд нашёл безопасное место для отдыха.",
+      "type": "heal",
+      "heal_percent": 25
+    },
+    "spring": {
+      "name": "Целебный источник",
+      "description": "Найден источник с целебной водой.",
+      "type": "heal",
+      "heal_percent": 50
+    },
+    "injury_minor": {
+      "name": "Коварная ловушка",
+      "description": "Кто-то наступил в ловушку.",
+      "type": "damage",
+      "damage_percent": 15
+    },
+    "injury_major": {
+      "name": "Обрушение",
+      "description": "Пещерный обрушение ранило всех.",
+      "type": "damage",
+      "damage_percent": 30
+    },
+    "shrine": {
+      "name": "Древний святилище",
+      "description": "Благословение древних усиливает отряд.",
+      "type": "buff",
+      "buff_duration": 3,
+      "buff_type": "stats_boost"
+    },
+    "storm": {
+      "name": "Магическая буря",
+      "description": "Буря замедляет продвижение.",
+      "type": "setback",
+      "setback_hours": 1
+    },
+    "merchant": {
+      "name": "Странствующий торговец",
+      "description": "Торговец предлагает товары за золото.",
+      "type": "merchant",
+      "offering": {
+        "lootbox": {
+          "price": 100,
+          "item": "lootbox"
+        }
+      }
+    }
+  }
+}
