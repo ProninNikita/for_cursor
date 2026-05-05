@@ -20,9 +20,9 @@ var character_states: Dictionary = {}  ## Состояние героев {char_
 var pending_combat_event: Dictionary = {}  ## Событие, требующее боя
 
 ## Создаёт новую вылазку
-static func create(squad: Array[CharacterData], duration: int, type: int, diff: int) -> RaidExpedition:
+static func create(squad_chars: Array[CharacterData], duration: int, type: int, diff: int) -> RaidExpedition:
 	var raid = RaidExpedition.new()
-	raid.squad = squad
+	raid.squad = squad_chars
 	raid.duration_hours = duration
 	raid.raid_type = type as RaidType
 	raid.difficulty = diff as RaidDifficulty
@@ -30,10 +30,10 @@ static func create(squad: Array[CharacterData], duration: int, type: int, diff: 
 	raid.start_time = Time.get_unix_time_from_system()
 
 	# Сохраняем начальное состояние героев
-	for char in squad:
-		raid.character_states[char.id] = {
-			"hp": char.current_hp,
-			"max_hp": char.get_max_hp()
+	for hero in squad_chars:
+		raid.character_states[hero.id] = {
+			"hp": hero.current_hp,
+			"max_hp": hero.get_max_hp()
 		}
 
 	return raid
@@ -212,20 +212,20 @@ func complete_combat_event(victory: bool) -> void:
 
 ## Обновляет состояние героев в ростере после завершения
 func update_roster_states() -> void:
-	for char in squad:
-		if char.id in character_states:
-			var state = character_states[char.id]
-			char.current_hp = state["hp"]
+	for hero in squad:
+		if hero.id in character_states:
+			var state = character_states[hero.id]
+			hero.current_hp = state["hp"]
 
 			# Если герой умер, удаляем его из ростера
 			if state["hp"] <= 0:
-				GameState.roster.remove_character(char.id)
+				GameState.roster.remove_character(hero.id)
 
 ## Сериализация для сохранения
 func to_dict() -> Dictionary:
 	var squad_ids = []
-	for char in squad:
-		squad_ids.append(char.id)
+	for hero in squad:
+		squad_ids.append(hero.id)
 
 	return {
 		"squad_ids": squad_ids,
@@ -257,8 +257,8 @@ static func from_dict(data: Dictionary) -> RaidExpedition:
 	var squad_ids = data.get("squad_ids", [])
 	raid.squad = []
 	for char_id in squad_ids:
-		var char = GameState.roster.get_by_id(char_id)
-		if char != null:
-			raid.squad.append(char)
+		var hero = GameState.roster.get_by_id(char_id)
+		if hero != null:
+			raid.squad.append(hero)
 
 	return raid

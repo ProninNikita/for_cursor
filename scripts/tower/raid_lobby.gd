@@ -9,10 +9,10 @@ const TOWER_LOBBY_SCENE = "res://scenes/tower/tower_lobby.tscn"
 @onready var hint_label: Label = $Main/RightPanel/Hint
 
 # Опции вылазки
-@onready var duration_2h: CheckBox = $Main/LeftPanel/Options/Duration/2H
-@onready var duration_6h: CheckBox = $Main/LeftPanel/Options/Duration/6H
-@onready var duration_12h: CheckBox = $Main/LeftPanel/Options/Duration/12H
-@onready var duration_24h: CheckBox = $Main/LeftPanel/Options/Duration/24H
+@onready var duration_2h: CheckBox = get_node("Main/LeftPanel/Options/Duration/2H")
+@onready var duration_6h: CheckBox = get_node("Main/LeftPanel/Options/Duration/6H")
+@onready var duration_12h: CheckBox = get_node("Main/LeftPanel/Options/Duration/12H")
+@onready var duration_24h: CheckBox = get_node("Main/LeftPanel/Options/Duration/24H")
 
 @onready var diff_easy: CheckBox = $Main/LeftPanel/Options/Difficulty/Easy
 @onready var diff_normal: CheckBox = $Main/LeftPanel/Options/Difficulty/Normal

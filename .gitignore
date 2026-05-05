@@ -1,0 +1,28 @@
+# Godot editor
+.godot/
+*.gdignore
+*.import
+export.cfg
+export_presets.cfg
+
+# User
+user://
+*.json.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Build
+build/
+dist/
+*.exe
+*.dll
+*.so

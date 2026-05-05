@@ -4,6 +4,7 @@ extends Control
 
 const TOWER_LOBBY_SCENE = "res://scenes/tower/tower_lobby.tscn"
 
+@onready var top_bar: HBoxContainer = $TopBar
 @onready var back_btn: Button = $TopBar/BackBtn
 @onready var time_label: Label = $Main/ProgressSection/TimeLabel
 @onready var events_list: VBoxContainer = $Main/EventsSection/EventsList/EventsList
@@ -15,7 +16,16 @@ var _raid: RaidExpedition = null
 var _update_timer: Timer = null
 
 func _ready() -> void:
-	back_btn.pressed.connect(_on_back)
+	if back_btn == null:
+		push_error("RaidProgress: BackBtn не найден")
+	else:
+		top_bar.raise()
+		back_btn.raise()
+		back_btn.disabled = false
+		back_btn.visible = true
+		back_btn.pressed.connect(_on_back)
+		print("RaidProgress: BackBtn подключен")
+
 	speed_up_btn.pressed.connect(_on_speed_up)
 	recall_btn.pressed.connect(_on_recall)
 
@@ -59,18 +69,18 @@ func _update_squad_list() -> void:
 	for child in squad_list.get_children():
 		child.queue_free()
 
-	for char in _raid.squad:
-		var char_id = char.id
-		if not char_id in _raid.character_states:
+	for hero in _raid.squad:
+		var hero_id = hero.id
+		if not hero_id in _raid.character_states:
 			continue
 
-		var state = _raid.character_states[char_id]
+		var state = _raid.character_states[hero_id]
 		var hp = state["hp"]
 		var max_hp = state["max_hp"]
 
 		var row = HBoxContainer.new()
 		var name_label = Label.new()
-		name_label.text = "%s HP: %d/%d" % [char.display_name, hp, max_hp]
+		name_label.text = "%s HP: %d/%d" % [hero.display_name, hp, max_hp]
 		row.add_child(name_label)
 		squad_list.add_child(row)
 
@@ -158,6 +168,7 @@ func _on_recall() -> void:
 	_show_no_raid()
 
 func _on_back() -> void:
+	print("RaidProgress: Back pressed")
 	if _update_timer != null:
 		_update_timer.stop()
 
