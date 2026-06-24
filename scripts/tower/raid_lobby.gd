@@ -77,8 +77,9 @@ func _rebuild_squad_list() -> void:
 		row.add_theme_constant_override("separation", 12)
 
 		var cb := CheckBox.new()
-		var hp_percent = float(c.current_hp) / float(c.get_max_hp()) * 100.0
-		cb.text = "%s  ·  HP %d/%d (%.0f%%)" % [c.display_name, c.current_hp, c.get_max_hp(), hp_percent]
+		var current_hp = c.get_current_hp()
+		var hp_percent = float(current_hp) / float(c.get_max_hp()) * 100.0
+		cb.text = "%s  ·  HP %d/%d (%.0f%%)" % [c.display_name, current_hp, c.get_max_hp(), hp_percent]
 		cb.toggled.connect(_on_row_toggled.bind(c.id, cb))
 		_checks[c.id] = cb
 		row.add_child(cb)

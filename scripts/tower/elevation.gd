@@ -57,16 +57,16 @@ func _create_floor_panel(floor_num: int, floor_data: Dictionary) -> PanelContain
 	num_label.text = "[%d]" % floor_num
 	num_label.custom_minimum_size = Vector2(60, 0)
 	num_label.layout_mode = 2
-	num_label.theme_override_font_sizes.font_size = 18
-	num_label.theme_override_colors.font_color = Color(0.9, 0.85, 0.7, 1)
+	num_label.add_theme_font_size_override("font_size", 18)
+	num_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.7, 1))
 	hbox.add_child(num_label)
 
 	var name_label = Label.new()
 	name_label.text = floor_data.get("name", "Этаж %d" % floor_num)
 	name_label.layout_mode = 2
 	name_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	name_label.theme_override_font_sizes.font_size = 20
-	name_label.theme_override_colors.font_color = Color(1, 1, 1, 1)
+	name_label.add_theme_font_size_override("font_size", 20)
+	name_label.add_theme_color_override("font_color", Color(1, 1, 1, 1))
 	hbox.add_child(name_label)
 
 	var stats = GameState.tower_elevation.get_floor_stats(floor_num)
@@ -85,16 +85,16 @@ func _create_floor_panel(floor_num: int, floor_data: Dictionary) -> PanelContain
 	status_label.text = stars
 	status_label.custom_minimum_size = Vector2(80, 0)
 	status_label.layout_mode = 2
-	status_label.theme_override_font_sizes.font_size = 16
-	status_label.theme_override_colors.font_color = Color(1, 0.85, 0.3, 1)
+	status_label.add_theme_font_size_override("font_size", 16)
+	status_label.add_theme_color_override("font_color", Color(1, 0.85, 0.3, 1))
 	hbox.add_child(status_label)
 
 	# Описание
 	var desc_label = Label.new()
 	desc_label.text = floor_data.get("description", "")
 	desc_label.layout_mode = 2
-	desc_label.theme_override_font_sizes.font_size = 13
-	desc_label.theme_override_colors.font_color = Color(0.7, 0.68, 0.62, 1)
+	desc_label.add_theme_font_size_override("font_size", 13)
+	desc_label.add_theme_color_override("font_color", Color(0.7, 0.68, 0.62, 1))
 	vbox.add_child(desc_label)
 
 	# Проверка доступности

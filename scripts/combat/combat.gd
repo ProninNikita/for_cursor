@@ -65,7 +65,7 @@ func _ready() -> void:
 
 	if GameState.pending_combat_squad.is_empty():
 		push_warning("Нет отряда — возврат к выбору башни")
-		get_tree().change_scene_to_file(TOWER_SQUAD_SCENE)
+		call_deferred("_change_scene", TOWER_SQUAD_SCENE)
 		return
 
 	_setup_units()
@@ -73,6 +73,9 @@ func _ready() -> void:
 	_turn_ptr = 0
 	_refresh_ui()
 	call_deferred("_run_turn")
+
+func _change_scene(scene_path: String) -> void:
+	get_tree().change_scene_to_file(scene_path)
 
 func _setup_units() -> void:
 	_all_units.clear()

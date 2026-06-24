@@ -63,7 +63,7 @@ static func from_hero(cd: CharacterData, rng: RandomNumberGenerator) -> BattleUn
 	u.character_data = cd
 	u.display_name = cd.display_name
 	u.max_hp = cd.get_max_hp()
-	u.current_hp = u.max_hp
+	u.current_hp = cd.get_current_hp()
 	u.atk = int(cd.stats.get("atk", 5))
 	u.def = int(cd.stats.get("def", 0))
 	u.magic = int(cd.stats.get("magic", 0))

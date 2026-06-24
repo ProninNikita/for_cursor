@@ -73,7 +73,7 @@ func _show_combat_alert() -> void:
 	var combat_event = raid.get_pending_combat_event()
 	var event_name = combat_event.get("name", "Бой")
 	tower_desc.text = "⚔️ %s!\nОтряд под атакой!\nНажми Башню → Продолжить" % event_name
-	tower_desc.set_theme_override_color("font_color", Color(0.9, 0.4, 0.3, 1))
+	tower_desc.add_theme_color_override("font_color", Color(0.9, 0.4, 0.3, 1))
 
 func _handle_raid_complete() -> void:
 	var raid = GameState.active_raid
@@ -97,10 +97,10 @@ func _update_raid_indicator() -> void:
 		var progress = int(raid.get_progress() * 100)
 		var remaining = raid.get_remaining_hours()
 		tower_desc.text = "Активная вылазка!\nПрогресс: %d%%\nОсталось: %dч\nНажми для деталей" % [progress, remaining]
-		tower_desc.set_theme_override_color("font_color", Color(0.3, 0.8, 0.4, 1))
+		tower_desc.add_theme_color_override("font_color", Color(0.3, 0.8, 0.4, 1))
 	else:
 		tower_desc.text = "Возвышение и Вылазки"
-		tower_desc.clear_theme_override_color("font_color")
+		tower_desc.remove_theme_color_override("font_color")
 
 func _on_portal() -> void:
 	get_tree().change_scene_to_file(PORTAL_SCENE)

@@ -19,8 +19,8 @@ func _ready() -> void:
 	if back_btn == null:
 		push_error("RaidProgress: BackBtn не найден")
 	else:
-		top_bar.raise()
-		back_btn.raise()
+		top_bar.move_to_front()
+		back_btn.move_to_front()
 		back_btn.disabled = false
 		back_btn.visible = true
 		back_btn.pressed.connect(_on_back)

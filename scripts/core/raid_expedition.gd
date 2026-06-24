@@ -32,7 +32,7 @@ static func create(squad_chars: Array[CharacterData], duration: int, type: int, 
 	# Сохраняем начальное состояние героев
 	for hero in squad_chars:
 		raid.character_states[hero.id] = {
-			"hp": hero.current_hp,
+			"hp": hero.get_current_hp(),
 			"max_hp": hero.get_max_hp()
 		}
 
@@ -215,7 +215,7 @@ func update_roster_states() -> void:
 	for hero in squad:
 		if hero.id in character_states:
 			var state = character_states[hero.id]
-			hero.current_hp = state["hp"]
+			hero.set_current_hp(state["hp"])
 
 			# Если герой умер, удаляем его из ростера
 			if state["hp"] <= 0:

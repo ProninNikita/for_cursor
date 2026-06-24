@@ -50,4 +50,4 @@ func apply_hp_from_battle(char_id: String, hp_remaining: int) -> void:
 	if hp_remaining <= 0:
 		remove_character(char_id)
 	else:
-		c.stats["hp"] = hp_remaining
+		c.set_current_hp(hp_remaining)

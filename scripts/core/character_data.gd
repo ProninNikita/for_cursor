@@ -12,6 +12,7 @@ extends Resource
 @export var character_class: String = ""
 @export var character_class_display_name: String = ""
 @export var stats: Dictionary = {}
+@export var current_hp: int = -1
 @export var ability_ids: Array[String] = []
 @export var unique_ability_id: String = ""
 @export var portrait_path: String = ""
@@ -34,6 +35,14 @@ func get_initiative() -> int:
 func get_max_hp() -> int:
 	return int(stats.get("hp", 1))
 
+func get_current_hp() -> int:
+	if current_hp < 0:
+		return get_max_hp()
+	return mini(current_hp, get_max_hp())
+
+func set_current_hp(value: int) -> void:
+	current_hp = mini(maxi(value, 0), get_max_hp())
+
 ## Сериализация для сохранения
 func to_dict() -> Dictionary:
 	return {
@@ -46,6 +55,7 @@ func to_dict() -> Dictionary:
 		"character_class": character_class,
 		"character_class_display_name": character_class_display_name,
 		"stats": stats,
+		"current_hp": get_current_hp(),
 		"ability_ids": ability_ids,
 		"unique_ability_id": unique_ability_id,
 		"portrait_path": portrait_path
@@ -62,6 +72,10 @@ static func from_dict(data: Dictionary) -> CharacterData:
 	char_data.character_class = data.get("character_class", "")
 	char_data.character_class_display_name = data.get("character_class_display_name", "")
 	char_data.stats = data.get("stats", {})
+	if data.has("current_hp"):
+		char_data.set_current_hp(int(data.get("current_hp", char_data.get_max_hp())))
+	else:
+		char_data.set_current_hp(char_data.get_max_hp())
 	char_data.ability_ids.clear()
 	for aid in data.get("ability_ids", []):
 		char_data.ability_ids.append(str(aid))
