@@ -78,6 +78,7 @@ func generate_character() -> CharacterData:
 	var base_stats = class_data.get("base_stats", {})
 	char_data.stats = _apply_stat_modifiers(base_stats.duplicate(), selected_trait)
 	char_data.set_current_hp(char_data.get_max_hp())
+	char_data.initialize_combat_brain()
 	
 	# 6. Способности - базовые класса + уникальная
 	char_data.ability_ids.clear()

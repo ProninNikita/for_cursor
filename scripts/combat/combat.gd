@@ -31,6 +31,10 @@ var _highlight_actor: BattleUnit
 var _selected_ability: AbilityData = null
 var _ability_targeting_mode: bool = false
 var _abilities_container: VBoxContainer = null
+var _auto_battle_enabled: bool = true
+var _battle_start_hp: Dictionary = {}
+var _battle_damage_dealt: Dictionary = {}
+var _battle_healing_done: Dictionary = {}
 var _current_tower_floor: int = 1  ## Текущий этаж в Возвышении
 var _is_tower_elevation: bool = false  ## Это бой в Возвышении?
 var _is_raid_combat: bool = false  ## Это бой в вылазке?
@@ -79,8 +83,16 @@ func _change_scene(scene_path: String) -> void:
 
 func _setup_units() -> void:
 	_all_units.clear()
+	_battle_start_hp.clear()
+	_battle_damage_dealt.clear()
+	_battle_healing_done.clear()
 	for cd in GameState.pending_combat_squad:
-		_all_units.append(BattleUnit.from_hero(cd, _rng))
+		cd.ensure_combat_brain()
+		var unit = BattleUnit.from_hero(cd, _rng)
+		_all_units.append(unit)
+		_battle_start_hp[cd.id] = unit.current_hp
+		_battle_damage_dealt[cd.id] = 0
+		_battle_healing_done[cd.id] = 0
 	for i in 3:
 		_all_units.append(BattleUnit.goblin(i, _rng))
 
@@ -121,6 +133,7 @@ func _finish_battle(victory: bool) -> void:
 	_battle_finished = true
 	_pick_target_mode = false
 	next_actor_label.text = ""
+	_update_combat_brains(victory)
 	_sync_roster_hp()
 
 	if victory:
@@ -194,6 +207,37 @@ func _sync_roster_hp() -> void:
 			continue
 		GameState.roster.apply_hp_from_battle(u.character_data.id, u.current_hp)
 
+func _update_combat_brains(victory: bool) -> void:
+	for u in _all_units:
+		if u.side != BattleUnit.UnitSide.ALLY or u.character_data == null or not u.is_alive():
+			continue
+		var char_id = u.character_data.id
+		var start_hp = int(_battle_start_hp.get(char_id, u.max_hp))
+		var damage_taken_ratio = 0.0
+		if u.max_hp > 0:
+			damage_taken_ratio = float(maxi(0, start_hp - u.current_hp)) / float(u.max_hp)
+		var hp_ratio = _hp_ratio(u)
+		var damage_dealt = int(_battle_damage_dealt.get(char_id, 0))
+		var healing_done = int(_battle_healing_done.get(char_id, 0))
+		u.character_data.record_combat_result(victory, hp_ratio, damage_taken_ratio, damage_dealt, healing_done)
+
+func _record_damage_dealt(user: BattleUnit, amount: int) -> void:
+	if amount <= 0 or user.character_data == null:
+		return
+	var char_id = user.character_data.id
+	_battle_damage_dealt[char_id] = int(_battle_damage_dealt.get(char_id, 0)) + amount
+
+func _record_healing_done(user: BattleUnit, amount: int) -> void:
+	if amount <= 0 or user.character_data == null:
+		return
+	var char_id = user.character_data.id
+	_battle_healing_done[char_id] = int(_battle_healing_done.get(char_id, 0)) + amount
+
+func _record_damage_taken(target: BattleUnit, amount: int) -> void:
+	if amount <= 0 or target.character_data == null:
+		return
+	target.character_data.record_damage_taken(amount, target.max_hp)
+
 func _next_alive_actor() -> BattleUnit:
 	var n := _turn_order.size()
 	if n == 0:
@@ -260,15 +304,18 @@ func _run_turn() -> void:
 			return
 		_enemy_action(actor)
 		_refresh_ui()
-		_run_turn()
 	else:
 		_current_ally_actor = actor
 		_pick_target_mode = false
 		_selected_ability = null
 		_ability_targeting_mode = false
-		hint_label.text = _HINT_ABILITY
+		hint_label.text = "%s оценивает ситуацию..." % actor.display_name
 		_show_ability_buttons(actor)
 		_refresh_ui()
+		await get_tree().create_timer(0.35).timeout
+		if _battle_finished:
+			return
+		_ally_auto_action(actor)
 
 func _calc_damage(attacker: BattleUnit, defender: BattleUnit) -> int:
 	var raw := attacker.atk - defender.def / 2
@@ -282,6 +329,7 @@ func _ally_attack_target(target: BattleUnit) -> void:
 
 	var dmg := _calc_damage(_current_ally_actor, target)
 	target.take_damage(dmg)
+	_record_damage_dealt(_current_ally_actor, dmg)
 	_log_line("%s бьёт %s на %d урона." % [_current_ally_actor.display_name, target.display_name, dmg])
 	if not target.is_alive():
 		_log_line("%s повержен." % target.display_name)
@@ -315,6 +363,180 @@ func _on_enemy_pressed(target: BattleUnit) -> void:
 		return
 	_ally_attack_target(target)
 
+func _ally_auto_action(actor: BattleUnit) -> void:
+	if actor.is_stunned():
+		_log_line("%s оглушён и пропускает ход!" % actor.display_name)
+		actor.tick_cooldowns()
+		_end_turn(actor)
+		return
+
+	var decision = _choose_ally_decision(actor)
+	var ability: AbilityData = decision.get("ability", null)
+	if ability != null:
+		var reason = decision.get("reason", "выбирает действие")
+		_log_line("%s сам решает: %s." % [actor.display_name, reason])
+		if decision.get("all_targets", false):
+			_execute_ability_on_all_targets(ability, actor, decision.get("targets", []))
+		else:
+			var target: BattleUnit = decision.get("target", null)
+			if target != null:
+				_execute_ability(ability, actor, target)
+			else:
+				_ally_basic_attack(actor)
+	else:
+		_ally_basic_attack(actor)
+
+
+func _ally_basic_attack(actor: BattleUnit) -> void:
+	var enemies := _living_enemies()
+	if enemies.is_empty():
+		_check_end()
+		return
+	var target = _pick_weakest_enemy(enemies)
+	var dmg := _calc_damage(actor, target)
+	target.take_damage(dmg)
+	_record_damage_dealt(actor, dmg)
+	_log_line("%s выбирает простую атаку по %s: %d урона." % [actor.display_name, target.display_name, dmg])
+	if not target.is_alive():
+		_log_line("%s повержен." % target.display_name)
+	actor.tick_cooldowns()
+	_end_turn(actor)
+
+
+func _choose_ally_decision(actor: BattleUnit) -> Dictionary:
+	var best = {
+		"score": -9999.0,
+		"ability": null,
+		"target": null,
+		"targets": [],
+		"all_targets": false,
+		"reason": ""
+	}
+
+	for ability in actor.abilities:
+		if not ability.can_use():
+			continue
+		var targets = _targets_for_ability(actor, ability)
+		if targets.is_empty():
+			continue
+
+		var targets_all = ability.target_type == AbilityData.TargetType.ALL_ALLIES or ability.target_type == AbilityData.TargetType.ALL_ENEMIES
+		if targets_all:
+			var score = _score_ally_action(actor, ability, null, targets)
+			if score > best["score"]:
+				best = {
+					"score": score,
+					"ability": ability,
+					"target": null,
+					"targets": targets,
+					"all_targets": true,
+					"reason": _describe_ally_decision(ability, null)
+				}
+		else:
+			for target in targets:
+				var score = _score_ally_action(actor, ability, target, [])
+				if score > best["score"]:
+					best = {
+						"score": score,
+						"ability": ability,
+						"target": target,
+						"targets": [],
+						"all_targets": false,
+						"reason": _describe_ally_decision(ability, target)
+					}
+
+	if best["ability"] == null:
+		return {}
+
+	var patience = _brain(actor, "skill_patience")
+	var threshold = 0.55 + patience * 0.25
+	if best["score"] < threshold:
+		return {}
+	return best
+
+
+func _targets_for_ability(user: BattleUnit, ability: AbilityData) -> Array[BattleUnit]:
+	match ability.target_type:
+		AbilityData.TargetType.SELF:
+			return [user]
+		AbilityData.TargetType.SINGLE_ENEMY:
+			return _living_enemies() if user.side == BattleUnit.UnitSide.ALLY else _living_allies()
+		AbilityData.TargetType.SINGLE_ALLY:
+			return _living_allies() if user.side == BattleUnit.UnitSide.ALLY else _living_enemies()
+		AbilityData.TargetType.ALL_ENEMIES:
+			return _living_enemies() if user.side == BattleUnit.UnitSide.ALLY else _living_allies()
+		AbilityData.TargetType.ALL_ALLIES:
+			return _living_allies() if user.side == BattleUnit.UnitSide.ALLY else _living_enemies()
+		_:
+			return []
+
+
+func _score_ally_action(actor: BattleUnit, ability: AbilityData, target: BattleUnit, targets: Array[BattleUnit]) -> float:
+	var aggression = _brain(actor, "aggression")
+	var caution = _brain(actor, "caution")
+	var teamwork = _brain(actor, "teamwork")
+	var self_preserve = _brain(actor, "self_preserve")
+	var focus_fire = _brain(actor, "focus_fire")
+	var skill_patience = _brain(actor, "skill_patience")
+	var actor_hp_ratio = _hp_ratio(actor)
+	var cooldown_cost = float(ability.cooldown_max) * skill_patience * 0.08
+	var score = _rng.randf() * 0.08
+
+	match ability.type:
+		AbilityData.AbilityType.DAMAGE:
+			if target == null:
+				return -9999.0
+			var target_hp_ratio = _hp_ratio(target)
+			score += 0.65 + ability.power + aggression * 0.7 + focus_fire * (1.0 - target_hp_ratio) * 1.25
+			if actor_hp_ratio < 0.35:
+				score -= caution * self_preserve * 0.3
+			score -= cooldown_cost
+		AbilityData.AbilityType.HEAL:
+			if target == null:
+				return -9999.0
+			var missing = 1.0 - _hp_ratio(target)
+			score += missing * 3.0 + teamwork * 0.85 + caution * 0.35
+			if target == actor:
+				score += self_preserve * 0.5
+			score -= cooldown_cost
+		AbilityData.AbilityType.BUFF:
+			score += 0.35 + teamwork * 0.75 + skill_patience * 0.45
+			if target == actor and actor_hp_ratio < 0.45:
+				score += caution * self_preserve * 0.6
+			if not targets.is_empty():
+				score += float(targets.size()) * 0.08
+			score -= cooldown_cost
+		AbilityData.AbilityType.DEBUFF:
+			if target == null:
+				return -9999.0
+			score += 0.55 + aggression * 0.35 + skill_patience * 0.25 + focus_fire * (1.0 - _hp_ratio(target))
+			score -= cooldown_cost
+		AbilityData.AbilityType.SPECIAL:
+			score += 0.45 + aggression * 0.3 + teamwork * 0.3 + skill_patience * 0.2
+			score -= cooldown_cost
+		_:
+			score += 0.25
+
+	return score
+
+
+func _describe_ally_decision(ability: AbilityData, target: BattleUnit) -> String:
+	if target == null:
+		return "использовать %s для группы" % ability.name
+	return "использовать %s на %s" % [ability.name, target.display_name]
+
+
+func _brain(unit: BattleUnit, key: String) -> float:
+	if unit.character_data == null:
+		return 0.5
+	return unit.character_data.get_brain_value(key)
+
+
+func _hp_ratio(unit: BattleUnit) -> float:
+	if unit.max_hp <= 0:
+		return 0.0
+	return float(unit.current_hp) / float(unit.max_hp)
+
 
 func _enemy_action(enemy: BattleUnit) -> void:
 	if enemy.is_stunned():
@@ -336,6 +558,7 @@ func _enemy_action(enemy: BattleUnit) -> void:
 		target = _pick_weakest_ally(allies)
 		var dmg := _calc_damage(enemy, target)
 		target.take_damage(dmg)
+		_record_damage_taken(target, dmg)
 		_log_line("%s бьёт %s на %d урона." % [enemy.display_name, target.display_name, dmg])
 		if not target.is_alive():
 			_log_line("%s пал в бою." % target.display_name)
@@ -445,7 +668,7 @@ func _show_ability_buttons(actor: BattleUnit) -> void:
 	_clear_container(_abilities_container)
 
 	var title := Label.new()
-	title.text = "Способности:"
+	title.text = "Способности (авто):" if _auto_battle_enabled else "Способности:"
 	title.add_theme_font_size_override("font_size", 16)
 	title.add_theme_color_override("font_color", Color(0.7, 0.8, 1.0))
 	_abilities_container.add_child(title)
@@ -465,10 +688,10 @@ func _show_ability_buttons(actor: BattleUnit) -> void:
 		var btn := Button.new()
 		btn.text = ability.get_display_name_with_cooldown()
 		btn.focus_mode = Control.FOCUS_NONE
-		btn.disabled = not ability.can_use()
+		btn.disabled = _auto_battle_enabled or not ability.can_use()
 		btn.tooltip_text = "%s\n%s" % [ability.name, ability.description]
 
-		if not btn.disabled:
+		if not _auto_battle_enabled and not btn.disabled:
 			btn.pressed.connect(_on_ability_selected.bind(ability))
 
 		hbox.add_child(btn)
@@ -544,6 +767,13 @@ func _on_ability_selected(ability: AbilityData) -> void:
 
 
 func _execute_ability(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
+	_apply_ability_to_target(ability, user, target)
+	ability.use()
+	user.tick_cooldowns()
+	_end_turn(user)
+
+
+func _apply_ability_to_target(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
 	match ability.type:
 		AbilityData.AbilityType.DAMAGE:
 			_deal_ability_damage(ability, user, target)
@@ -556,15 +786,17 @@ func _execute_ability(ability: AbilityData, user: BattleUnit, target: BattleUnit
 		AbilityData.AbilityType.SPECIAL:
 			_apply_special(ability, user, target)
 
-	ability.use()
-	user.tick_cooldowns()
-	_end_turn(user)
-
 
 func _execute_ability_on_all_targets(ability: AbilityData, user: BattleUnit, targets: Array[BattleUnit]) -> void:
+	var used = false
 	for target in targets:
 		if target.is_alive():
-			_execute_ability(ability, user, target)
+			_apply_ability_to_target(ability, user, target)
+			used = true
+	if used:
+		ability.use()
+		user.tick_cooldowns()
+	_end_turn(user)
 
 
 func _deal_ability_damage(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
@@ -583,7 +815,11 @@ func _deal_ability_damage(ability: AbilityData, user: BattleUnit, target: Battle
 	else:
 		damage = int(damage * 1.1)
 
+	var hp_before = target.current_hp
 	target.take_ability_damage(damage)
+	var applied_damage = hp_before - target.current_hp
+	_record_damage_dealt(user, applied_damage)
+	_record_damage_taken(target, applied_damage)
 	_log_line("%s использует %s на %s: %d урона!" % [user.display_name, ability.name, target.display_name, damage])
 
 	_apply_ability_effects(ability, user, target)
@@ -595,7 +831,10 @@ func _deal_ability_damage(ability: AbilityData, user: BattleUnit, target: Battle
 func _apply_heal(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
 	var stat_value = user.get_stat(ability.stat_used)
 	var heal_amount = int(stat_value * ability.power)
+	var hp_before = target.current_hp
 	target.heal(heal_amount)
+	var applied_heal = target.current_hp - hp_before
+	_record_healing_done(user, applied_heal)
 	_log_line("%s использует %s на %s: +%d HP" % [user.display_name, ability.name, target.display_name, heal_amount])
 	_apply_ability_effects(ability, user, target)
 
@@ -620,7 +859,12 @@ func _apply_ability_effects(ability: AbilityData, user: BattleUnit, target: Batt
 		return
 
 	for effect in ability.effects:
-		_parse_and_apply_effect(effect, target, user)
+		var effect_target = target
+		var effect_text = str(effect)
+		if effect_text.begins_with("self_"):
+			effect_target = user
+			effect_text = effect_text.substr(5)
+		_parse_and_apply_effect(effect_text, effect_target, user)
 
 
 func _parse_and_apply_effect(effect_str: String, target: BattleUnit, user: BattleUnit) -> void:
@@ -631,12 +875,30 @@ func _parse_and_apply_effect(effect_str: String, target: BattleUnit, user: Battl
 	var effect_type = parts[0]
 	var value = 0
 	var duration = 0
-
-	if parts.size() >= 3:
-		value = int(parts[2])
+	var mode = ""
 
 	if parts.size() >= 2:
+		mode = parts[1]
+
+	if mode == "chance" and parts.size() >= 3:
+		value = int(parts[2])
+		duration = 1
+	elif (mode == "buff" or mode == "debuff") and parts.size() >= 3:
+		value = int(parts[2])
+		duration = 2
+	elif effect_type == "poison" and parts.size() >= 2:
 		duration = int(parts[1])
+		value = 2
+	elif effect_type == "regen" and parts.size() >= 2:
+		duration = int(parts[1])
+		value = 2
+	elif effect_type == "lifesteal" and parts.size() >= 2:
+		value = int(parts[1])
+	elif effect_type == "mark":
+		duration = 2
+		value = 3
+	elif effect_type == "evade" or effect_type == "taunt":
+		duration = 2
 
 	match effect_type:
 		"stun":
@@ -668,8 +930,8 @@ func _parse_and_apply_effect(effect_str: String, target: BattleUnit, user: Battl
 				target.battle_state.apply_effect(BattleState.EffectType.DEF_DEBUFF, duration, value)
 				_log_line("Защита %s понижена на %d!" % [target.display_name, value])
 		"mark":
-			target.battle_state.apply_effect(BattleState.EffectType.MARK, duration, 3)
-			_log_line("%s помечен! Бонусный урон +3" % target.display_name)
+			target.battle_state.apply_effect(BattleState.EffectType.MARK, duration, value)
+			_log_line("%s помечен! Бонусный урон +%d" % [target.display_name, value])
 		"evade":
 			target.battle_state.apply_effect(BattleState.EffectType.EVADE, duration, 0)
 			_log_line("%s уклоняется от атак!" % target.display_name)
