@@ -8,6 +8,7 @@ const HUB_SCENE = "res://scenes/hub/hub.tscn"
 @onready var characters_list: VBoxContainer = $Scroll/CharactersList
 
 func _ready() -> void:
+	back_btn.set_meta("qa_id", "mansion.back")
 	back_btn.pressed.connect(_on_back)
 	_refresh_list()
 

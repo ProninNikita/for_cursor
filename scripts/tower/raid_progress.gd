@@ -16,6 +16,7 @@ var _raid: RaidExpedition = null
 var _update_timer: Timer = null
 
 func _ready() -> void:
+	_set_qa_ids()
 	if back_btn == null:
 		push_error("RaidProgress: BackBtn не найден")
 	else:
@@ -41,6 +42,14 @@ func _ready() -> void:
 	_update_timer.wait_time = 1.0
 	_update_timer.autostart = true
 	add_child(_update_timer)
+
+func _set_qa_ids() -> void:
+	if back_btn != null:
+		back_btn.set_meta("qa_id", "raid_progress.back")
+	if speed_up_btn != null:
+		speed_up_btn.set_meta("qa_id", "raid_progress.speed_up")
+	if recall_btn != null:
+		recall_btn.set_meta("qa_id", "raid_progress.recall")
 
 func _on_timer_tick() -> void:
 	if _raid == null or GameState.active_raid == null:

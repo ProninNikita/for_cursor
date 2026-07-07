@@ -11,9 +11,14 @@ extends Control
 const HUB_SCENE = "res://scenes/hub/hub.tscn"
 
 func _ready() -> void:
+	_set_qa_ids()
 	back_btn.pressed.connect(_on_back)
 	open_btn.pressed.connect(_on_open_lootbox)
 	_update_labels()
+
+func _set_qa_ids() -> void:
+	back_btn.set_meta("qa_id", "portal.back")
+	open_btn.set_meta("qa_id", "portal.open_lootbox")
 
 func _update_labels() -> void:
 	roster_label.text = "В ростре: %d персонажей" % GameState.roster.get_character_count()

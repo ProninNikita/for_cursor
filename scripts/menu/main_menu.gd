@@ -14,12 +14,21 @@ const HUB_SCENE = "res://scenes/hub/hub.tscn"
 @onready var cancel_btn: Button = $SlotPanel/Margin/VBox/CancelBtn
 
 func _ready() -> void:
+	_set_qa_ids()
 	new_game_btn.pressed.connect(_on_new_game)
 	load_btn.pressed.connect(_on_load)
 	slot1_btn.pressed.connect(_on_slot_picked.bind(1))
 	slot2_btn.pressed.connect(_on_slot_picked.bind(2))
 	slot3_btn.pressed.connect(_on_slot_picked.bind(3))
 	cancel_btn.pressed.connect(_on_cancel_slots)
+
+func _set_qa_ids() -> void:
+	new_game_btn.set_meta("qa_id", "menu.new_game")
+	load_btn.set_meta("qa_id", "menu.load")
+	slot1_btn.set_meta("qa_id", "menu.slot.1")
+	slot2_btn.set_meta("qa_id", "menu.slot.2")
+	slot3_btn.set_meta("qa_id", "menu.slot.3")
+	cancel_btn.set_meta("qa_id", "menu.cancel_slots")
 
 func _on_new_game() -> void:
 	SaveManager.start_new_game()

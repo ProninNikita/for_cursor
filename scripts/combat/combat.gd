@@ -46,6 +46,8 @@ const _HINT_TARGET_ENEMY := "Выберите цель для атаки"
 const _HINT_TARGET_ALLY := "Выберите союзника"
 
 func _ready() -> void:
+	back_btn.set_meta("qa_id", "combat.back")
+	end_btn.set_meta("qa_id", "combat.return")
 	_rng.randomize()
 	AbilityRegistry.initialize()
 	back_btn.visible = false

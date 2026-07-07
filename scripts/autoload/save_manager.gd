@@ -2,19 +2,29 @@ extends Node
 
 ## Менеджер сохранений — каждый слот в отдельном файле с метаданными
 
-const SAVE_DIR = "user://saves/"
+const DEFAULT_SAVE_DIR = "user://saves/"
 const SAVE_SLOTS = 3
 const STARTING_LOOTBOXES = 10
 
+var _save_dir: String = DEFAULT_SAVE_DIR
+
 func _ready() -> void:
-	_dir_ensure(SAVE_DIR)
+	_dir_ensure(_save_dir)
 
 func _dir_ensure(path: String) -> void:
 	if not DirAccess.dir_exists_absolute(path):
 		DirAccess.make_dir_recursive_absolute(path)
 
 func get_save_path(slot: int) -> String:
-	return SAVE_DIR + "save_slot_%d.json" % slot
+	return _save_dir + "save_slot_%d.json" % slot
+
+func use_default_save_dir() -> void:
+	_save_dir = DEFAULT_SAVE_DIR
+	_dir_ensure(_save_dir)
+
+func use_qa_save_dir(run_id: String = "last") -> void:
+	_save_dir = OS.get_temp_dir().path_join("squad_tactics_qa_saves").path_join(run_id) + "/"
+	_dir_ensure(_save_dir)
 
 ## Загружает метаданные сохранения (без полных данных)
 func get_save_info(slot: int) -> Dictionary:
@@ -122,7 +132,10 @@ func load_game(slot: int) -> bool:
 		GameState.active_raid = RaidExpedition.from_dict(raid_data)
 
 	# Загружаем историю вылазок
-	GameState.completed_raids = data.get("completed_raids", [])
+	GameState.completed_raids.clear()
+	for raid_entry in data.get("completed_raids", []):
+		if raid_entry is Dictionary:
+			GameState.completed_raids.append(raid_entry)
 
 	return true
 

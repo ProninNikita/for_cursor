@@ -33,6 +33,7 @@ var _selected_difficulty: RaidExpedition.RaidDifficulty = RaidExpedition.RaidDif
 var _selected_type: RaidExpedition.RaidType = RaidExpedition.RaidType.HUNT
 
 func _ready() -> void:
+	_set_qa_ids()
 	back_btn.pressed.connect(_on_back)
 	start_btn.pressed.connect(_on_start)
 
@@ -58,6 +59,20 @@ func _ready() -> void:
 	_rebuild_squad_list()
 	_update_rewards()
 
+func _set_qa_ids() -> void:
+	back_btn.set_meta("qa_id", "raid_lobby.back")
+	start_btn.set_meta("qa_id", "raid_lobby.start")
+	duration_2h.set_meta("qa_id", "raid_lobby.duration.2")
+	duration_6h.set_meta("qa_id", "raid_lobby.duration.6")
+	duration_12h.set_meta("qa_id", "raid_lobby.duration.12")
+	duration_24h.set_meta("qa_id", "raid_lobby.duration.24")
+	diff_easy.set_meta("qa_id", "raid_lobby.difficulty.easy")
+	diff_normal.set_meta("qa_id", "raid_lobby.difficulty.normal")
+	diff_hard.set_meta("qa_id", "raid_lobby.difficulty.hard")
+	type_hunt.set_meta("qa_id", "raid_lobby.type.hunt")
+	type_scout.set_meta("qa_id", "raid_lobby.type.scout")
+	type_caravan.set_meta("qa_id", "raid_lobby.type.caravan")
+
 func _rebuild_squad_list() -> void:
 	_checks.clear()
 	_ordered_ids.clear()
@@ -80,6 +95,7 @@ func _rebuild_squad_list() -> void:
 		var current_hp = c.get_current_hp()
 		var hp_percent = float(current_hp) / float(c.get_max_hp()) * 100.0
 		cb.text = "%s  ·  HP %d/%d (%.0f%%)" % [c.display_name, current_hp, c.get_max_hp(), hp_percent]
+		cb.set_meta("qa_id", "raid_lobby.hero.%s" % c.id)
 		cb.toggled.connect(_on_row_toggled.bind(c.id, cb))
 		_checks[c.id] = cb
 		row.add_child(cb)

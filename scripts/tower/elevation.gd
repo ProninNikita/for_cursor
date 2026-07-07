@@ -16,6 +16,7 @@ var _selected_floor: int = 1
 var _floor_buttons: Dictionary = {}  ## floor_num -> Button
 
 func _ready() -> void:
+	back_btn.set_meta("qa_id", "elevation.back")
 	back_btn.pressed.connect(_on_back)
 	_build_floor_list()
 	_update_info()
@@ -108,6 +109,7 @@ func _create_floor_panel(floor_num: int, floor_data: Dictionary) -> PanelContain
 	btn.custom_minimum_size = Vector2(0, 30)
 	btn.layout_mode = 2
 	btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	btn.set_meta("qa_id", "elevation.floor.%d" % floor_num)
 	btn.pressed.connect(_on_floor_selected.bind(floor_num))
 	vbox.add_child(btn)
 

@@ -14,11 +14,17 @@ const RAID_PROGRESS_SCENE = "res://scenes/tower/raid_progress.tscn"
 @onready var raid_label: Label = $Main/HBox/RaidPanel/VBox/Info
 
 func _ready() -> void:
+	_set_qa_ids()
 	back_btn.pressed.connect(_on_back)
 	elevation_btn.pressed.connect(_on_elevation)
 	raid_btn.pressed.connect(_on_raid)
 
 	_update_info()
+
+func _set_qa_ids() -> void:
+	back_btn.set_meta("qa_id", "tower_lobby.back")
+	elevation_btn.set_meta("qa_id", "tower_lobby.elevation")
+	raid_btn.set_meta("qa_id", "tower_lobby.raid")
 
 func _update_info() -> void:
 	# Информация о Возвышении

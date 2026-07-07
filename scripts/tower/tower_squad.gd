@@ -20,6 +20,7 @@ var _ordered_ids: Array[String] = []
 
 
 func _ready() -> void:
+	_set_qa_ids()
 	back_btn.pressed.connect(_on_back)
 	start_btn.pressed.connect(_on_start)
 
@@ -34,6 +35,10 @@ func _ready() -> void:
 		hint_label.text = "Отметь от 1 до 5 героев для %s." % floor_name
 
 	_rebuild_list()
+
+func _set_qa_ids() -> void:
+	back_btn.set_meta("qa_id", "tower_squad.back")
+	start_btn.set_meta("qa_id", "tower_squad.start")
 
 
 func _rebuild_list() -> void:
@@ -60,6 +65,7 @@ func _rebuild_list() -> void:
 			c.get_max_hp(),
 			c.get_initiative()
 		]
+		cb.set_meta("qa_id", "tower_squad.hero.%s" % c.id)
 		cb.toggled.connect(_on_row_toggled.bind(c.id, cb))
 		_checks[c.id] = cb
 		row.add_child(cb)
