@@ -22,7 +22,7 @@ func _set_qa_ids() -> void:
 
 func _update_labels() -> void:
 	roster_label.text = "В ростре: %d персонажей" % GameState.roster.get_character_count()
-	lootboxes_label.text = "Лутбоксов: %d" % GameState.lootboxes_remaining
+	lootboxes_label.text = "Лутбоксов: %d   Золото: %d" % [GameState.lootboxes_remaining, GameState.gold]
 	open_btn.disabled = GameState.lootboxes_remaining <= 0
 	if GameState.lootboxes_remaining <= 0:
 		result_label.text = "Лутбоксы закончились. Герои в Особняке."

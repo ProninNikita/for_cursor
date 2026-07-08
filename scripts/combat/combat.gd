@@ -7,6 +7,7 @@ const HUB_SCENE := "res://scenes/hub/hub.tscn"
 const TOWER_LOBBY_SCENE := "res://scenes/tower/tower_lobby.tscn"
 const RAID_PROGRESS_SCENE := "res://scenes/tower/raid_progress.tscn"
 const CombatSimulationScript = preload("res://scripts/combat/combat_simulation.gd")
+const CombatRulesScript = preload("res://scripts/combat/combat_rules.gd")
 
 @onready var back_btn: Button = $TopBar/BackBtn
 @onready var turn_order_label: RichTextLabel = $Main/TurnOrder
@@ -22,6 +23,7 @@ const CombatSimulationScript = preload("res://scripts/combat/combat_simulation.g
 @onready var end_btn: Button = $EndPanel/Margin/VBox/ReturnBtn
 
 var _combat = CombatSimulationScript.new()
+var _rules
 var _pick_target_mode: bool = false
 var _battle_finished: bool = false
 var _current_ally_actor: BattleUnit
@@ -39,16 +41,22 @@ const _HINT_ENEMY_TURN := "Ход врага…"
 const _HINT_ABILITY := "Выберите способность"
 const _HINT_TARGET_ENEMY := "Выберите цель для атаки"
 const _HINT_TARGET_ALLY := "Выберите союзника"
+const _ALLY_DECISION_DELAY := 0.70
+const _ENEMY_DECISION_DELAY := 0.85
+const _ACTION_RESULT_DELAY := 0.90
+const _NEXT_TURN_DELAY := 0.25
 
 func _ready() -> void:
 	back_btn.set_meta("qa_id", "combat.back")
 	end_btn.set_meta("qa_id", "combat.return")
 	_combat.rng.randomize()
+	_rules = CombatRulesScript.new(_combat)
 	AbilityRegistry.initialize()
 	back_btn.visible = false
 	back_btn.pressed.connect(_on_back_pressed)
 	end_btn.pressed.connect(_on_return_hub)
 	end_panel.visible = false
+	combat_log.scroll_following = true
 	combat_log.clear()
 	_create_abilities_container()
 
@@ -103,10 +111,14 @@ func _finish_battle(victory: bool) -> void:
 	next_actor_label.text = ""
 	_update_combat_brains(victory)
 	_sync_roster_hp()
+	var applied_rewards: Dictionary = {}
+	var floor_data: Dictionary = {}
 
 	if victory:
 		# Регистрируем победу в Возвышении
 		if _is_tower_elevation:
+			floor_data = GameState.tower_elevation.get_floor_data(_current_tower_floor)
+			applied_rewards = GameState.apply_rewards(floor_data.get("reward", {}))
 			GameState.tower_elevation.register_victory(_current_tower_floor)
 			GameState.tower_elevation.advance_to_next_floor()
 		elif _is_raid_combat:
@@ -115,7 +127,7 @@ func _finish_battle(victory: bool) -> void:
 			if GameState.active_raid != null:
 				GameState.active_raid.complete_combat_event(true)
 		else:
-			GameState.lootboxes_remaining += 1
+			applied_rewards = GameState.apply_rewards({"lootboxes": 1})
 	else:
 		# Поражение в вылазке
 		if _is_raid_combat:
@@ -129,25 +141,21 @@ func _finish_battle(victory: bool) -> void:
 	if victory:
 		end_title.text = "Победа!"
 		if _is_tower_elevation:
-			var floor_data = GameState.tower_elevation.get_floor_data(_current_tower_floor)
-			var reward_text = ""
-			var rewards = floor_data.get("reward", {})
-			if rewards.has("lootboxes"):
-				reward_text += "%d лутбоксов" % rewards["lootboxes"]
-			if rewards.has("gold"):
-				if reward_text != "":
-					reward_text += ", "
-				reward_text += "%d золота" % rewards["gold"]
-
-			end_detail.text = "%s conquered!\nНаграда: %s\n\nСледующий этаж: %d" % [
+			end_detail.text = "%s conquered!\nНаграда: %s\nВсего: %d лутбоксов, %d золота\n\nСледующий этаж: %d" % [
 				floor_data.get("name", "Этаж %d" % _current_tower_floor),
-				reward_text,
+				_format_rewards(applied_rewards),
+				GameState.lootboxes_remaining,
+				GameState.gold,
 				_current_tower_floor + 1
 			]
 		elif _is_raid_combat:
 			end_detail.text = "Враги разбиты!\nОтряд продолжает вылазку."
 		else:
-			end_detail.text = "Получен лутбокс! Всего лутбоксов: %d" % GameState.lootboxes_remaining
+			end_detail.text = "Получено: %s\nВсего: %d лутбоксов, %d золота" % [
+				_format_rewards(applied_rewards),
+				GameState.lootboxes_remaining,
+				GameState.gold
+			]
 	else:
 		end_title.text = "Поражение"
 		if _is_raid_combat:
@@ -175,14 +183,17 @@ func _sync_roster_hp() -> void:
 func _update_combat_brains(victory: bool) -> void:
 	_combat.update_combat_brains(victory)
 
-func _record_damage_dealt(user: BattleUnit, amount: int) -> void:
-	_combat.record_damage_dealt(user, amount)
-
-func _record_healing_done(user: BattleUnit, amount: int) -> void:
-	_combat.record_healing_done(user, amount)
-
-func _record_damage_taken(target: BattleUnit, amount: int) -> void:
-	_combat.record_damage_taken(target, amount)
+func _format_rewards(rewards: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	var lootboxes := int(rewards.get("lootboxes", 0))
+	if lootboxes > 0:
+		parts.append("%d лутбоксов" % lootboxes)
+	var gold_amount := int(rewards.get("gold", 0))
+	if gold_amount > 0:
+		parts.append("%d золота" % gold_amount)
+	if parts.is_empty():
+		return "без награды"
+	return ", ".join(parts)
 
 func _next_alive_actor() -> BattleUnit:
 	return _combat.next_alive_actor()
@@ -224,7 +235,7 @@ func _run_turn() -> void:
 		_current_ally_actor = null
 		hint_label.text = _HINT_ENEMY_TURN
 		_refresh_ui()
-		await get_tree().create_timer(0.55).timeout
+		await _tempo_wait(_ENEMY_DECISION_DELAY)
 		if _battle_finished:
 			return
 		_enemy_action(actor)
@@ -237,7 +248,7 @@ func _run_turn() -> void:
 		hint_label.text = "%s оценивает ситуацию..." % actor.display_name
 		_show_ability_buttons(actor)
 		_refresh_ui()
-		await get_tree().create_timer(0.35).timeout
+		await _tempo_wait(_ALLY_DECISION_DELAY)
 		if _battle_finished:
 			return
 		_ally_auto_action(actor)
@@ -251,21 +262,14 @@ func _ally_attack_target(target: BattleUnit) -> void:
 	if not target.is_alive() or target.side != BattleUnit.UnitSide.ENEMY:
 		return
 
-	var dmg := _calc_damage(_current_ally_actor, target)
-	target.take_damage(dmg)
-	_record_damage_dealt(_current_ally_actor, dmg)
-	_log_line("%s бьёт %s на %d урона." % [_current_ally_actor.display_name, target.display_name, dmg])
-	if not target.is_alive():
-		_log_line("%s повержен." % target.display_name)
-
-	if _check_end():
-		_refresh_ui()
-		return
+	var actor := _current_ally_actor
+	_log_lines(_rules.execute_basic_attack(actor, target, "strike"))
+	actor.tick_cooldowns()
 
 	_pick_target_mode = false
 	_current_ally_actor = null
 	_refresh_ui()
-	_run_turn()
+	_end_turn(actor)
 
 
 func _on_enemy_hover_enter(target: BattleUnit) -> void:
@@ -317,12 +321,7 @@ func _ally_basic_attack(actor: BattleUnit) -> void:
 		_check_end()
 		return
 	var target = _pick_weakest_enemy(enemies)
-	var dmg := _calc_damage(actor, target)
-	target.take_damage(dmg)
-	_record_damage_dealt(actor, dmg)
-	_log_line("%s выбирает простую атаку по %s: %d урона." % [actor.display_name, target.display_name, dmg])
-	if not target.is_alive():
-		_log_line("%s повержен." % target.display_name)
+	_log_lines(_rules.execute_basic_attack(actor, target, "ally_auto"))
 	actor.tick_cooldowns()
 	_end_turn(actor)
 
@@ -335,7 +334,6 @@ func _enemy_action(enemy: BattleUnit) -> void:
 	if enemy.is_stunned():
 		_log_line("%s оглушён и пропускает ход!" % enemy.display_name)
 		enemy.tick_cooldowns()
-		var result = enemy.tick_battle_state()
 		_end_turn(enemy)
 		return
 
@@ -349,12 +347,7 @@ func _enemy_action(enemy: BattleUnit) -> void:
 		if allies.is_empty():
 			return
 		target = _pick_weakest_ally(allies)
-		var dmg := _calc_damage(enemy, target)
-		target.take_damage(dmg)
-		_record_damage_taken(target, dmg)
-		_log_line("%s бьёт %s на %d урона." % [enemy.display_name, target.display_name, dmg])
-		if not target.is_alive():
-			_log_line("%s пал в бою." % target.display_name)
+		_log_lines(_rules.execute_basic_attack(enemy, target, "strike"))
 		_end_turn(enemy)
 
 
@@ -479,6 +472,18 @@ func _clear_container(c: Node) -> void:
 func _log_line(line: String) -> void:
 	combat_log.append_text(line + "\n")
 
+func _log_lines(lines: Array) -> void:
+	for line in lines:
+		_log_line(str(line))
+
+func _tempo_wait(seconds: float) -> void:
+	if seconds <= 0.0 or _battle_finished:
+		return
+	var wait_seconds := seconds
+	if Engine.time_scale > 1.0:
+		wait_seconds /= Engine.time_scale
+	await get_tree().create_timer(wait_seconds).timeout
+
 
 func _on_ability_selected(ability: AbilityData) -> void:
 	if _battle_finished or _current_ally_actor == null:
@@ -504,206 +509,25 @@ func _on_ability_selected(ability: AbilityData) -> void:
 
 
 func _execute_ability(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	_apply_ability_to_target(ability, user, target)
-	ability.use()
-	user.tick_cooldowns()
+	_log_lines(_rules.execute_ability(ability, user, target))
 	_end_turn(user)
-
-
-func _apply_ability_to_target(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	match ability.type:
-		AbilityData.AbilityType.DAMAGE:
-			_deal_ability_damage(ability, user, target)
-		AbilityData.AbilityType.HEAL:
-			_apply_heal(ability, user, target)
-		AbilityData.AbilityType.BUFF:
-			_apply_buff(ability, user, target)
-		AbilityData.AbilityType.DEBUFF:
-			_apply_debuff(ability, user, target)
-		AbilityData.AbilityType.SPECIAL:
-			_apply_special(ability, user, target)
 
 
 func _execute_ability_on_all_targets(ability: AbilityData, user: BattleUnit, targets: Array[BattleUnit]) -> void:
-	var used = false
-	for target in targets:
-		if target.is_alive():
-			_apply_ability_to_target(ability, user, target)
-			used = true
-	if used:
-		ability.use()
-		user.tick_cooldowns()
+	_log_lines(_rules.execute_ability_on_targets(ability, user, targets))
 	_end_turn(user)
 
 
-func _deal_ability_damage(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	var stat_value = user.get_stat(ability.stat_used)
-	var base_damage = stat_value * ability.power
-
-	var mark_bonus = 0
-	if target.battle_state != null and target.battle_state.has_mark():
-		mark_bonus = target.battle_state.get_mark_bonus_damage()
-
-	var defense = target.get_stat("def")
-	var damage = int(maxi(1, base_damage + mark_bonus - defense / 2))
-
-	if _combat.rng.randf() < 0.5:
-		damage = int(damage * 0.9)
-	else:
-		damage = int(damage * 1.1)
-
-	var hp_before = target.current_hp
-	target.take_ability_damage(damage)
-	var applied_damage = hp_before - target.current_hp
-	_record_damage_dealt(user, applied_damage)
-	_record_damage_taken(target, applied_damage)
-	_log_line("%s использует %s на %s: %d урона!" % [user.display_name, ability.name, target.display_name, damage])
-
-	_apply_ability_effects(ability, user, target)
-
-	if not target.is_alive():
-		_log_line("%s повержен." % target.display_name)
-
-
-func _apply_heal(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	var stat_value = user.get_stat(ability.stat_used)
-	var heal_amount = int(stat_value * ability.power)
-	var hp_before = target.current_hp
-	target.heal(heal_amount)
-	var applied_heal = target.current_hp - hp_before
-	_record_healing_done(user, applied_heal)
-	_log_line("%s использует %s на %s: +%d HP" % [user.display_name, ability.name, target.display_name, heal_amount])
-	_apply_ability_effects(ability, user, target)
-
-
-func _apply_buff(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	_log_line("%s использует %s на %s!" % [user.display_name, ability.name, target.display_name])
-	_apply_ability_effects(ability, user, target)
-
-
-func _apply_debuff(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	_log_line("%s использует %s на %s!" % [user.display_name, ability.name, target.display_name])
-	_apply_ability_effects(ability, user, target)
-
-
-func _apply_special(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	_log_line("%s использует %s!" % [user.display_name, ability.name])
-	_apply_ability_effects(ability, user, target)
-
-
-func _apply_ability_effects(ability: AbilityData, user: BattleUnit, target: BattleUnit) -> void:
-	if target.battle_state == null:
-		return
-
-	for effect in ability.effects:
-		var effect_target = target
-		var effect_text = str(effect)
-		if effect_text.begins_with("self_"):
-			effect_target = user
-			effect_text = effect_text.substr(5)
-		_parse_and_apply_effect(effect_text, effect_target, user)
-
-
-func _parse_and_apply_effect(effect_str: String, target: BattleUnit, user: BattleUnit) -> void:
-	var parts = effect_str.split("_")
-	if parts.is_empty():
-		return
-
-	var effect_type = parts[0]
-	var value = 0
-	var duration = 0
-	var mode = ""
-
-	if parts.size() >= 2:
-		mode = parts[1]
-
-	if mode == "chance" and parts.size() >= 3:
-		value = int(parts[2])
-		duration = 1
-	elif (mode == "buff" or mode == "debuff") and parts.size() >= 3:
-		value = int(parts[2])
-		duration = 2
-	elif effect_type == "poison" and parts.size() >= 2:
-		duration = int(parts[1])
-		value = 2
-	elif effect_type == "regen" and parts.size() >= 2:
-		duration = int(parts[1])
-		value = 2
-	elif effect_type == "lifesteal" and parts.size() >= 2:
-		value = int(parts[1])
-	elif effect_type == "mark":
-		duration = 2
-		value = 3
-	elif effect_type == "evade" or effect_type == "taunt":
-		duration = 2
-
-	match effect_type:
-		"stun":
-			if _combat.rng.randf() * 100 < value:
-				target.battle_state.apply_effect(BattleState.EffectType.STUN, duration)
-				_log_line("%s оглушён!" % target.display_name)
-		"poison":
-			target.battle_state.apply_effect(BattleState.EffectType.POISON, duration, value)
-			_log_line("%s отравлен на %d!" % [target.display_name, duration])
-		"regen":
-			target.battle_state.apply_effect(BattleState.EffectType.REGEN, duration, value)
-			_log_line("%s восстанавливает HP каждый ход!" % target.display_name)
-		"atk":
-			if "buff" in effect_str:
-				target.battle_state.atk_modifier += value
-				target.battle_state.apply_effect(BattleState.EffectType.ATK_BUFF, duration, value)
-				_log_line("Атака %s повышена на %d!" % [target.display_name, value])
-			elif "debuff" in effect_str:
-				target.battle_state.atk_modifier -= value
-				target.battle_state.apply_effect(BattleState.EffectType.ATK_DEBUFF, duration, value)
-				_log_line("Атака %s понижена на %d!" % [target.display_name, value])
-		"def":
-			if "buff" in effect_str:
-				target.battle_state.def_modifier += value
-				target.battle_state.apply_effect(BattleState.EffectType.DEF_BUFF, duration, value)
-				_log_line("Защита %s повышена на %d!" % [target.display_name, value])
-			elif "debuff" in effect_str:
-				target.battle_state.def_modifier -= value
-				target.battle_state.apply_effect(BattleState.EffectType.DEF_DEBUFF, duration, value)
-				_log_line("Защита %s понижена на %d!" % [target.display_name, value])
-		"mark":
-			target.battle_state.apply_effect(BattleState.EffectType.MARK, duration, value)
-			_log_line("%s помечен! Бонусный урон +%d" % [target.display_name, value])
-		"evade":
-			target.battle_state.apply_effect(BattleState.EffectType.EVADE, duration, 0)
-			_log_line("%s уклоняется от атак!" % target.display_name)
-		"taunt":
-			target.battle_state.apply_effect(BattleState.EffectType.TAUNT, duration, 0)
-			_log_line("%s провоцирует врагов!" % target.display_name)
-		"initiative":
-			if "buff" in effect_str:
-				target.battle_state.initiative_modifier += value
-				target.initiative += value
-				target.battle_state.apply_effect(BattleState.EffectType.INITIATIVE_BUFF, duration, value)
-				_log_line("Инициатива %s повышена на %d!" % [target.display_name, value])
-		"lifesteal":
-			var heal_amount = int(user.get_stat("atk") * value / 100.0)
-			user.heal(heal_amount)
-			_log_line("%s восстанавливает %d HP от вампиризма!" % [user.display_name, heal_amount])
-		"cleanse":
-			target.battle_state.clear_all_effects()
-			_log_line("Все эффекты с %s сняты!" % target.display_name)
-
-
 func _end_turn(actor: BattleUnit) -> void:
-	var result = actor.tick_battle_state()
-	for msg in result["messages"]:
-		_log_line(msg)
-
-	if result["damage"] > 0:
-		actor.take_ability_damage(result["damage"])
-
-	if result["heal"] > 0:
-		actor.heal(result["heal"])
-
-	_check_end()
+	_log_lines(_rules.apply_turn_end(actor))
 	_refresh_ui()
 
+	await _tempo_wait(_ACTION_RESULT_DELAY)
+	if _check_end():
+		_refresh_ui()
+		return
+
+	await _tempo_wait(_NEXT_TURN_DELAY)
 	if not _battle_finished:
 		_run_turn()
 

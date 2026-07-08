@@ -13,6 +13,13 @@ user://
 .DS_Store
 Thumbs.db
 
+# Launcher build intermediates
+assets/launcher/*.iconset/
+assets/launcher/*.tiff
+assets/launcher/SquadTactics.icns
+assets/launcher/SquadTactics_1024.png
+assets/launcher/squad_tactics_logo.png
+
 # IDE
 .vscode/*
 !.vscode/settings.json

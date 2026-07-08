@@ -1,0 +1,11 @@
+#!/bin/zsh
+
+PROJECT_DIR="/Users/likit/for_cursor"
+GODOT_APP="/Applications/Godot.app"
+GODOT_BIN="$GODOT_APP/Contents/MacOS/Godot"
+
+if [[ -x "$GODOT_BIN" ]]; then
+	exec "$GODOT_BIN" --path "$PROJECT_DIR"
+fi
+
+open -na "$GODOT_APP" --args --path "$PROJECT_DIR"

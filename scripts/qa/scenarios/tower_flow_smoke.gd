@@ -9,6 +9,9 @@ const COMBAT_SCENE := "res://scenes/combat/combat.tscn"
 func run(driver, fixtures, _context: Dictionary) -> void:
 	print("QA_SCENARIO: tower_flow_smoke")
 	fixtures.reset_game(5)
+	var rewards: Dictionary = fixtures.state.tower_elevation.get_floor_data(1).get("reward", {})
+	var lootboxes_before: int = fixtures.state.lootboxes_remaining
+	var gold_before: int = fixtures.state.gold
 
 	await driver.load_scene(HUB_SCENE)
 	await driver.press_qa("hub.tower")
@@ -27,6 +30,14 @@ func run(driver, fixtures, _context: Dictionary) -> void:
 	await driver.wait_for_scene(COMBAT_SCENE)
 	await driver.wait_until(Callable(self, "_combat_finished").bind(driver), 15.0, "бой из возвышения должен завершиться")
 	driver.check(fixtures.state.pending_combat_squad.is_empty(), "После боя pending_combat_squad не очищен")
+	driver.check(
+		fixtures.state.lootboxes_remaining == lootboxes_before + int(rewards.get("lootboxes", 0)),
+		"Награда Возвышения не добавила лутбоксы"
+	)
+	driver.check(
+		fixtures.state.gold == gold_before + int(rewards.get("gold", 0)),
+		"Награда Возвышения не добавила золото"
+	)
 
 	await driver.press_qa("combat.return")
 	await driver.wait_for_any_scene([TOWER_LOBBY_SCENE, HUB_SCENE], 3.0)

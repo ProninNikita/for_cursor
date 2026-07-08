@@ -4,7 +4,7 @@ extends Node
 
 const DEFAULT_SAVE_DIR = "user://saves/"
 const SAVE_SLOTS = 3
-const STARTING_LOOTBOXES = 10
+const STARTING_LOOTBOXES = 3
 
 var _save_dir: String = DEFAULT_SAVE_DIR
 
@@ -52,6 +52,7 @@ func get_save_info(slot: int) -> Dictionary:
 		"playtime_seconds": meta.get("playtime_seconds", 0),
 		"character_count": meta.get("character_count", 0),
 		"lootboxes_remaining": meta.get("lootboxes_remaining", 0),
+		"gold": meta.get("gold", data.get("gold", 0)),
 		"tower_max_floor": tower_data.get("max_floor", 1),
 		"active_raid": data.get("active_raid") != null
 	}
@@ -65,6 +66,7 @@ func list_saves() -> Array:
 func save_game(slot: int, playtime_seconds: float = 0.0) -> bool:
 	var roster = GameState.roster
 	var lootboxes = GameState.lootboxes_remaining
+	var gold = GameState.gold
 	
 	var characters_data: Array = []
 	for c in roster.get_characters():
@@ -80,10 +82,12 @@ func save_game(slot: int, playtime_seconds: float = 0.0) -> bool:
 			"playtime_seconds": int(playtime_seconds),
 			"character_count": roster.get_character_count(),
 			"lootboxes_remaining": lootboxes,
+			"gold": gold,
 			"tower_max_floor": tower_max_floor,
 			"active_raid": has_active_raid
 		},
 		"lootboxes_remaining": lootboxes,
+		"gold": gold,
 		"characters": characters_data,
 		"tower_elevation": GameState.tower_elevation.to_dict() if GameState.tower_elevation else {},
 		"active_raid": GameState.active_raid.to_dict() if GameState.active_raid else null,
@@ -115,6 +119,7 @@ func load_game(slot: int) -> bool:
 		return false
 
 	GameState.lootboxes_remaining = data.get("lootboxes_remaining", 0)
+	GameState.gold = data.get("gold", 0)
 	GameState.roster.clear_all()
 
 	for char_dict in data.get("characters", []):
@@ -127,6 +132,7 @@ func load_game(slot: int) -> bool:
 		GameState.tower_elevation.from_dict(tower_data)
 
 	# Загружаем активную вылазку (если была)
+	GameState.active_raid = null
 	var raid_data = data.get("active_raid")
 	if raid_data != null:
 		GameState.active_raid = RaidExpedition.from_dict(raid_data)
@@ -152,6 +158,7 @@ func delete_all_saves() -> void:
 func start_new_game() -> void:
 	GameState.roster.clear_all()
 	GameState.lootboxes_remaining = STARTING_LOOTBOXES
+	GameState.gold = 0
 	GameState.tower_elevation.reset()
 	GameState.active_raid = null
 	GameState.completed_raids.clear()

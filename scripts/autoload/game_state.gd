@@ -5,6 +5,7 @@ extends Node
 var roster: Roster
 var lootbox: Lootbox
 var lootboxes_remaining: int = 0  ## Неоткрытые лутбоксы
+var gold: int = 0  ## Общая валюта игрока
 
 ## Временные данные перед сценой боя (очищаются после боя)
 var pending_combat_squad: Array[CharacterData] = []
@@ -35,6 +36,21 @@ func clear_pending_combat() -> void:
 	pending_combat_squad.clear()
 	pending_combat_encounter = ""
 
+func apply_rewards(rewards: Dictionary) -> Dictionary:
+	var applied: Dictionary = {}
+
+	var lootboxes := int(rewards.get("lootboxes", 0))
+	if lootboxes > 0:
+		lootboxes_remaining += lootboxes
+		applied["lootboxes"] = lootboxes
+
+	var gold_amount := int(rewards.get("gold", 0))
+	if gold_amount > 0:
+		gold += gold_amount
+		applied["gold"] = gold_amount
+
+	return applied
+
 ## Начинает бой в Башне (для Возвышения)
 func begin_tower_combat(squad: Array[CharacterData], floor_num: int) -> void:
 	begin_combat(squad, "tower_floor_" + str(floor_num))
@@ -52,6 +68,7 @@ func complete_raid() -> Dictionary:
 	var duration = active_raid.duration_hours
 
 	active_raid.update_roster_states()
+	apply_rewards(rewards)
 
 	# Сохраняем в историю
 	completed_raids.append({
