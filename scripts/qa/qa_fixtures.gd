@@ -45,7 +45,7 @@ func prepare_for_scene(scene_path: String) -> void:
 			reset_game(3)
 		"res://scenes/tower/raid_progress.tscn":
 			prepare_raid(3)
-		"res://scenes/combat/combat.tscn":
+		"res://scenes/combat_rt/combat_rt.tscn":
 			prepare_combat(5)
 		_:
 			reset_game(3)

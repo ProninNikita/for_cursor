@@ -38,8 +38,8 @@ const SCENES := [
 		"qa_ids": ["raid_progress.back", "raid_progress.speed_up", "raid_progress.recall"]
 	},
 	{
-		"path": "res://scenes/combat/combat.tscn",
-		"qa_ids": ["combat.return"]
+		"path": "res://scenes/combat_rt/combat_rt.tscn",
+		"qa_ids": ["combat_rt.return", "combat_rt.pause", "combat_rt.speed", "combat.return"]
 	}
 ]
 

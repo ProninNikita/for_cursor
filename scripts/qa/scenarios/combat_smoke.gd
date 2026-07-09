@@ -1,6 +1,6 @@
 extends RefCounted
 
-const COMBAT_SCENE := "res://scenes/combat/combat.tscn"
+const COMBAT_SCENE := "res://scenes/combat_rt/combat_rt.tscn"
 const HUB_SCENE := "res://scenes/hub/hub.tscn"
 
 func run(driver, fixtures, _context: Dictionary) -> void:

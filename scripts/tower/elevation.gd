@@ -4,7 +4,6 @@ extends Control
 
 const TOWER_LOBBY_SCENE = "res://scenes/tower/tower_lobby.tscn"
 const TOWER_SQUAD_SCENE = "res://scenes/tower/tower_squad.tscn"
-const COMBAT_SCENE = "res://scenes/combat/combat.tscn"
 
 @onready var back_btn: Button = $TopBar/BackBtn
 @onready var floors_container: ScrollContainer = $Main/FloorsContainer

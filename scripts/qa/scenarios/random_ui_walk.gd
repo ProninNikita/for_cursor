@@ -1,7 +1,7 @@
 extends RefCounted
 
 const HUB_SCENE := "res://scenes/hub/hub.tscn"
-const COMBAT_SCENE := "res://scenes/combat/combat.tscn"
+const COMBAT_SCENE := "res://scenes/combat_rt/combat_rt.tscn"
 
 func run(driver, fixtures, context: Dictionary) -> void:
 	print("QA_SCENARIO: random_ui_walk")

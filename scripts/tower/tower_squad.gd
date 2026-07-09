@@ -5,7 +5,7 @@ extends Control
 
 const HUB_SCENE := "res://scenes/hub/hub.tscn"
 const TOWER_LOBBY_SCENE := "res://scenes/tower/tower_lobby.tscn"
-const COMBAT_SCENE := "res://scenes/combat/combat.tscn"
+const COMBAT_SCENE := "res://scenes/combat_rt/combat_rt.tscn"
 
 var _is_elevation: bool = false  ## Это Возвышение?
 var _target_floor: int = 1  ## Целевой этаж для Возвышения

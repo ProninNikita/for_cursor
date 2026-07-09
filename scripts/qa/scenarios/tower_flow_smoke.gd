@@ -4,7 +4,7 @@ const HUB_SCENE := "res://scenes/hub/hub.tscn"
 const TOWER_LOBBY_SCENE := "res://scenes/tower/tower_lobby.tscn"
 const ELEVATION_SCENE := "res://scenes/tower/elevation.tscn"
 const TOWER_SQUAD_SCENE := "res://scenes/tower/tower_squad.tscn"
-const COMBAT_SCENE := "res://scenes/combat/combat.tscn"
+const COMBAT_SCENE := "res://scenes/combat_rt/combat_rt.tscn"
 
 func run(driver, fixtures, _context: Dictionary) -> void:
 	print("QA_SCENARIO: tower_flow_smoke")

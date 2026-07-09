@@ -6,7 +6,7 @@ extends Control
 const PORTAL_SCENE = "res://scenes/portal/portal.tscn"
 const MANSION_SCENE = "res://scenes/mansion/mansion.tscn"
 const TOWER_LOBBY_SCENE = "res://scenes/tower/tower_lobby.tscn"
-const COMBAT_SCENE = "res://scenes/combat/combat.tscn"
+const COMBAT_RT_SCENE = "res://scenes/combat_rt/combat_rt.tscn"
 const RAID_PROGRESS_SCENE = "res://scenes/tower/raid_progress.tscn"
 
 @onready var portal_btn: Button = $BuildingsGrid/Portal/VBox/Btn
@@ -119,7 +119,7 @@ func _on_tower() -> void:
 	if GameState.active_raid != null and GameState.active_raid.has_pending_combat():
 		var combat_event = GameState.active_raid.get_pending_combat_event()
 		GameState.begin_raid_combat(GameState.active_raid.squad, combat_event)
-		get_tree().change_scene_to_file(COMBAT_SCENE)
+		get_tree().change_scene_to_file(COMBAT_RT_SCENE)
 	elif GameState.active_raid != null:
 		# Есть активная вылазка но без боя - показываем прогресс
 		get_tree().change_scene_to_file(RAID_PROGRESS_SCENE)
@@ -134,7 +134,7 @@ func _on_mansion() -> void:
 	get_tree().change_scene_to_file(MANSION_SCENE)
 
 func _on_training() -> void:
-	pass  # TODO: открыть сцену/меню тренировочной площадки
+	get_tree().change_scene_to_file(COMBAT_RT_SCENE)
 
 func _on_save() -> void:
 	if SaveManager.save_game(1):
