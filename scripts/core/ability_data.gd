@@ -14,6 +14,11 @@ var power: float = 1.0
 var cooldown_max: int = 0
 var cooldown_current: int = 0
 var effects: Array = []
+var rt_range_tiles: float = -1.0
+var rt_radius_tiles: float = 0.0
+var rt_cast_time: float = 0.0
+var rt_cooldown_seconds: float = -1.0
+var rt_priority: float = 0.0
 
 static func from_dict(data: Dictionary) -> AbilityData:
 	var ability = AbilityData.new()
@@ -25,6 +30,12 @@ static func from_dict(data: Dictionary) -> AbilityData:
 	ability.cooldown_max = int(data.get("cooldown", 0))
 	ability.cooldown_current = 0
 	ability.effects = data.get("effects", [])
+	var rt_data: Dictionary = data.get("rt", {})
+	ability.rt_range_tiles = float(rt_data.get("range_tiles", data.get("rt_range_tiles", -1.0)))
+	ability.rt_radius_tiles = float(rt_data.get("radius_tiles", data.get("rt_radius_tiles", 0.0)))
+	ability.rt_cast_time = float(rt_data.get("cast_time", data.get("rt_cast_time", 0.0)))
+	ability.rt_cooldown_seconds = float(rt_data.get("cooldown_seconds", data.get("rt_cooldown_seconds", -1.0)))
+	ability.rt_priority = float(rt_data.get("priority", data.get("rt_priority", 0.0)))
 
 	var type_str = data.get("type", "damage").to_lower()
 	ability.type = _parse_type(type_str)
@@ -74,6 +85,11 @@ func clone() -> AbilityData:
 	cloned.cooldown_max = cooldown_max
 	cloned.cooldown_current = cooldown_current
 	cloned.effects = effects.duplicate()
+	cloned.rt_range_tiles = rt_range_tiles
+	cloned.rt_radius_tiles = rt_radius_tiles
+	cloned.rt_cast_time = rt_cast_time
+	cloned.rt_cooldown_seconds = rt_cooldown_seconds
+	cloned.rt_priority = rt_priority
 	return cloned
 
 func get_display_name_with_cooldown() -> String:

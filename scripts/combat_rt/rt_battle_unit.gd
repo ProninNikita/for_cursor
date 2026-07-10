@@ -15,6 +15,8 @@ var visible_enemies: Array = []
 var last_seen_enemies: Dictionary = {}
 var intent: String = "idle"
 var intent_reason: String = "ждёт"
+var target_name: String = ""
+var intent_ability_name: String = ""
 var morale: float = 0.65
 var fear: float = 0.0
 var vision_radius_tiles: float = 6.0
@@ -24,6 +26,9 @@ var attack_cooldown: float = 1.25
 var attack_timer: float = 0.0
 var speed_tiles_per_second: float = 2.4
 var hold_timer: float = 0.0
+var ability_cooldowns: Dictionary = {}
+var stat_modifiers: Dictionary = {}
+var timed_effects: Array[Dictionary] = []
 
 func setup_from_battle_unit(source: BattleUnit, id: String, spawn: Vector2i, origin: Vector2, battlefield) -> void:
 	unit_id = id
@@ -57,7 +62,69 @@ func hp_ratio() -> float:
 func get_stat(stat: String) -> int:
 	if battle_unit == null:
 		return 0
-	return battle_unit.get_stat(stat)
+	return maxi(0, battle_unit.get_stat(stat) + int(stat_modifiers.get(stat, 0)))
+
+func tick_rt_state(delta: float) -> void:
+	for ability_id in ability_cooldowns.keys():
+		ability_cooldowns[ability_id] = maxf(0.0, float(ability_cooldowns[ability_id]) - delta)
+	for i in range(timed_effects.size() - 1, -1, -1):
+		var effect: Dictionary = timed_effects[i]
+		effect["remaining"] = float(effect.get("remaining", 0.0)) - delta
+		timed_effects[i] = effect
+		if float(effect["remaining"]) <= 0.0:
+			var stat := str(effect.get("stat", ""))
+			var value := int(effect.get("value", 0))
+			stat_modifiers[stat] = int(stat_modifiers.get(stat, 0)) - value
+			if int(stat_modifiers.get(stat, 0)) == 0:
+				stat_modifiers.erase(stat)
+			timed_effects.remove_at(i)
+
+func can_use_ability(ability: AbilityData) -> bool:
+	return ability != null and float(ability_cooldowns.get(ability.id, 0.0)) <= 0.0
+
+func mark_ability_used(ability: AbilityData) -> void:
+	if ability == null:
+		return
+	ability_cooldowns[ability.id] = ability_cooldown_seconds(ability)
+
+func ability_cooldown_seconds(ability: AbilityData) -> float:
+	if ability == null:
+		return attack_cooldown
+	if ability.rt_cooldown_seconds > 0.0:
+		return maxf(0.2, ability.rt_cooldown_seconds)
+	if ability.cooldown_max <= 0:
+		return attack_cooldown
+	return maxf(0.8, float(ability.cooldown_max) * 1.65)
+
+func ability_range_tiles(ability: AbilityData) -> float:
+	if ability == null:
+		return attack_range_tiles
+	if ability.rt_range_tiles >= 0.0:
+		return ability.rt_range_tiles
+	match ability.target_type:
+		AbilityData.TargetType.SELF, AbilityData.TargetType.ALL_ALLIES:
+			return 0.0
+		AbilityData.TargetType.SINGLE_ALLY:
+			return 4.5
+		AbilityData.TargetType.ALL_ENEMIES:
+			return 4.8
+		_:
+			pass
+	if ability.stat_used == "magic":
+		return 4.6
+	if ability.stat_used == "speed":
+		return 2.2
+	return attack_range_tiles
+
+func apply_stat_modifier(stat: String, value: int, duration: float) -> void:
+	if stat == "" or value == 0 or duration <= 0.0:
+		return
+	stat_modifiers[stat] = int(stat_modifiers.get(stat, 0)) + value
+	timed_effects.append({
+		"stat": stat,
+		"value": value,
+		"remaining": duration
+	})
 
 func take_damage(amount: int) -> void:
 	if battle_unit == null:
@@ -97,9 +164,11 @@ func brain_value(key: String) -> float:
 				return 0.45
 	return character_data.get_brain_value(key)
 
-func set_intent(type: String, reason: String, target_destination: Vector2i = Vector2i.ZERO) -> void:
+func set_intent(type: String, reason: String, target_destination: Vector2i = Vector2i.ZERO, target = null, ability: AbilityData = null) -> void:
 	intent = type
 	intent_reason = reason
+	target_name = target.display_name if target != null else ""
+	intent_ability_name = ability.name if ability != null else ""
 	if target_destination != Vector2i.ZERO:
 		destination = target_destination
 

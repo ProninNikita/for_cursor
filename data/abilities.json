@@ -8,7 +8,8 @@
       "target_type": "single_enemy",
       "stat_used": "atk",
       "power": 1.0,
-      "cooldown": 0
+      "cooldown": 0,
+      "rt": {"range_tiles": 1.25, "cooldown_seconds": 1.25, "priority": 0.0}
     },
     "heavy_strike": {
       "id": "heavy_strike",
@@ -19,7 +20,8 @@
       "stat_used": "atk",
       "power": 1.5,
       "cooldown": 2,
-      "effects": ["stun_chance_25"]
+      "effects": ["stun_chance_25"],
+      "rt": {"range_tiles": 1.25, "cast_time": 0.25, "cooldown_seconds": 3.2, "priority": 0.35}
     },
     "guard": {
       "id": "guard",
@@ -30,7 +32,8 @@
       "stat_used": "def",
       "power": 1.0,
       "cooldown": 1,
-      "effects": ["def_buff_3"]
+      "effects": ["def_buff_3"],
+      "rt": {"range_tiles": 0.0, "cast_time": 0.15, "cooldown_seconds": 2.2, "priority": 0.2}
     },
     "fireball": {
       "id": "fireball",
@@ -40,7 +43,8 @@
       "target_type": "all_enemies",
       "stat_used": "magic",
       "power": 1.2,
-      "cooldown": 3
+      "cooldown": 3,
+      "rt": {"range_tiles": 4.8, "radius_tiles": 1.5, "cast_time": 0.45, "cooldown_seconds": 5.0, "priority": 0.55}
     },
     "arcane_bolt": {
       "id": "arcane_bolt",
@@ -61,7 +65,8 @@
       "stat_used": "magic",
       "power": 1.0,
       "cooldown": 2,
-      "effects": ["def_buff_5"]
+      "effects": ["def_buff_5"],
+      "rt": {"range_tiles": 4.5, "cast_time": 0.25, "cooldown_seconds": 3.6, "priority": 0.35}
     },
     "heal": {
       "id": "heal",
@@ -71,7 +76,8 @@
       "target_type": "single_ally",
       "stat_used": "magic",
       "power": 1.5,
-      "cooldown": 1
+      "cooldown": 1,
+      "rt": {"range_tiles": 4.5, "cast_time": 0.2, "cooldown_seconds": 2.4, "priority": 0.55}
     },
     "cure": {
       "id": "cure",
@@ -93,7 +99,8 @@
       "stat_used": "magic",
       "power": 1.0,
       "cooldown": 3,
-      "effects": ["atk_buff_2", "def_buff_2"]
+      "effects": ["atk_buff_2", "def_buff_2"],
+      "rt": {"range_tiles": 4.5, "cast_time": 0.25, "cooldown_seconds": 4.8, "priority": 0.3}
     },
     "quick_strike": {
       "id": "quick_strike",
@@ -103,7 +110,8 @@
       "target_type": "single_enemy",
       "stat_used": "atk",
       "power": 1.1,
-      "cooldown": 1
+      "cooldown": 1,
+      "rt": {"range_tiles": 1.35, "cooldown_seconds": 1.8, "priority": 0.25}
     },
     "evade": {
       "id": "evade",
@@ -125,7 +133,8 @@
       "stat_used": "speed",
       "power": 1.0,
       "cooldown": 2,
-      "effects": ["mark_debuff"]
+      "effects": ["mark_debuff"],
+      "rt": {"range_tiles": 3.8, "cast_time": 0.15, "cooldown_seconds": 3.4, "priority": 0.28}
     },
     "shield_bash": {
       "id": "shield_bash",
@@ -266,7 +275,8 @@
       "target_type": "single_enemy",
       "stat_used": "atk",
       "power": 1.0,
-      "cooldown": 0
+      "cooldown": 0,
+      "rt": {"range_tiles": 1.15, "cooldown_seconds": 1.35, "priority": 0.0}
     },
     "goblin_poison_strike": {
       "id": "goblin_poison_strike",
@@ -277,7 +287,8 @@
       "stat_used": "atk",
       "power": 0.8,
       "cooldown": 3,
-      "effects": ["poison_2"]
+      "effects": ["poison_2"],
+      "rt": {"range_tiles": 1.15, "cast_time": 0.1, "cooldown_seconds": 4.2, "priority": 0.22}
     }
   }
 }
