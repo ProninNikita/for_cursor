@@ -6,6 +6,7 @@ extends Control
 const HUB_SCENE := "res://scenes/hub/hub.tscn"
 const TOWER_LOBBY_SCENE := "res://scenes/tower/tower_lobby.tscn"
 const COMBAT_SCENE := "res://scenes/combat_rt/combat_rt.tscn"
+const CombatContextScript = preload("res://scripts/combat_rt/rt_combat_context.gd")
 
 var _is_elevation: bool = false  ## Это Возвышение?
 var _target_floor: int = 1  ## Целевой этаж для Возвышения
@@ -54,6 +55,8 @@ func _rebuild_list() -> void:
 		return
 
 	start_btn.disabled = false
+	if _is_elevation:
+		_add_elevation_preview()
 	for c in chars:
 		_ordered_ids.append(c.id)
 		var row := HBoxContainer.new()
@@ -72,6 +75,64 @@ func _rebuild_list() -> void:
 		list_container.add_child(row)
 
 	hint_label.text = "Отметь от 1 до 5 героев и нажми «В бой»."
+
+func _add_elevation_preview() -> void:
+	var floor_data := GameState.tower_elevation.get_floor_data(_target_floor)
+	var context = CombatContextScript.new()
+	context.combat_type = CombatContextScript.CombatType.TOWER
+	context.tower_floor = _target_floor
+	context.floor_data = floor_data.duplicate(true)
+	context.floor_name = str(floor_data.get("name", "Этаж %d" % _target_floor))
+	context.arena_id = str(floor_data.get("arena_id", "training_ruins"))
+	context.enemy_plan = CombatContextScript._duplicate_entries(floor_data.get("enemies", []))
+	context.reward_data = floor_data.get("reward", {}).duplicate(true)
+	context._setup_tower_rules()
+
+	var panel := PanelContainer.new()
+	panel.custom_minimum_size = Vector2(0, 118)
+	panel.set_meta("qa_id", "tower_squad.threat_preview")
+	list_container.add_child(panel)
+
+	var margin := MarginContainer.new()
+	margin.add_theme_constant_override("margin_left", 12)
+	margin.add_theme_constant_override("margin_top", 10)
+	margin.add_theme_constant_override("margin_right", 12)
+	margin.add_theme_constant_override("margin_bottom", 10)
+	panel.add_child(margin)
+
+	var label := Label.new()
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.text = "%s\n%s\nВраги: %s\nНаграда: %s" % [
+		context.floor_name,
+		context.threat_text(),
+		_format_enemy_plan(context.enemy_plan),
+		_format_rewards(context.reward_data)
+	]
+	margin.add_child(label)
+
+func _format_enemy_plan(enemy_plan: Array) -> String:
+	var parts: PackedStringArray = []
+	for entry in enemy_plan:
+		if not (entry is Dictionary):
+			continue
+		parts.append("%s x%d" % [str(entry.get("type", "enemy")), int(entry.get("count", 1))])
+	if parts.is_empty():
+		return "нет данных"
+	return ", ".join(parts)
+
+func _format_rewards(rewards: Dictionary) -> String:
+	var parts: PackedStringArray = []
+	var lootboxes := int(rewards.get("lootboxes", 0))
+	if lootboxes > 0:
+		parts.append("%d лутбоксов" % lootboxes)
+	var gold := int(rewards.get("gold", 0))
+	if gold > 0:
+		parts.append("%d золота" % gold)
+	if bool(rewards.get("unique_item", false)):
+		parts.append("уникальный предмет")
+	if parts.is_empty():
+		return "без награды"
+	return ", ".join(parts)
 
 
 func _selected_count() -> int:

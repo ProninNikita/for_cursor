@@ -4,8 +4,10 @@
       "name": "Засада!",
       "description": "На отряд напали гоблины!",
       "type": "combat",
+      "arena_id": "training_ruins",
       "enemies": [
-        { "type": "goblin", "count": 2 }
+        { "type": "goblin", "count": 1 },
+        { "type": "goblin_coward", "count": 1 }
       ],
       "difficulty": 0.8
     },
@@ -13,8 +15,10 @@
       "name": "Орки перехватили!",
       "description": "Орочий патруль застал врасплох.",
       "type": "combat",
+      "arena_id": "broken_halls",
       "enemies": [
-        { "type": "orc", "count": 2 }
+        { "type": "orc", "count": 1 },
+        { "type": "goblin_scout", "count": 1 }
       ],
       "difficulty": 1.0
     },
@@ -22,9 +26,10 @@
       "name": "Тяжёлая засада",
       "description": "На отряд напали тролли!",
       "type": "combat",
+      "arena_id": "flooded_crossing",
       "enemies": [
         { "type": "troll", "count": 1 },
-        { "type": "orc", "count": 1 }
+        { "type": "orc_defender", "count": 1 }
       ],
       "difficulty": 1.3
     },

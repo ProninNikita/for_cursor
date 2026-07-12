@@ -53,8 +53,9 @@ func tick(hours: int) -> Array[Dictionary]:
 			_calculate_final_rewards()
 			break
 
+		_apply_travel_fatigue()
 		var event = _generate_random_event()
-		if event != null:
+		if not event.is_empty():
 			events.append(event)
 			new_events.append(event)
 			_process_event(event)
@@ -107,6 +108,7 @@ func _process_event(event: Dictionary) -> void:
 				var state = character_states[char_id]
 				var heal_amount = int(state["max_hp"] * heal_percent / 100.0)
 				state["hp"] = mini(state["max_hp"], state["hp"] + heal_amount)
+				state["fatigue"] = maxf(0.0, float(state.get("fatigue", 0.0)) - 0.12)
 		"damage":
 			var damage_percent = event.get("damage_percent", 0)
 			for char_id in character_states:
@@ -163,6 +165,27 @@ func _calculate_final_rewards() -> void:
 
 	pending_rewards["lootboxes"] = pending_rewards.get("lootboxes", 0) + int(base_lootboxes * difficulty_mult * type_mult)
 	pending_rewards["gold"] = pending_rewards.get("gold", 0) + int(base_gold * difficulty_mult * type_mult)
+
+func _apply_travel_fatigue() -> void:
+	if duration_hours < 6:
+		return
+	var difficulty_pressure := 1.0
+	match difficulty:
+		RaidDifficulty.EASY:
+			difficulty_pressure = 0.65
+		RaidDifficulty.NORMAL:
+			difficulty_pressure = 1.0
+		RaidDifficulty.HARD:
+			difficulty_pressure = 1.35
+	for char_id in character_states:
+		var state = character_states[char_id]
+		var fatigue := clampf(float(state.get("fatigue", 0.0)) + 0.045 * difficulty_pressure, 0.0, 0.7)
+		state["fatigue"] = fatigue
+		if fatigue < 0.18:
+			continue
+		var damage_percent := 0.01 + fatigue * 0.018
+		var damage_amount := maxi(1, int(round(float(state["max_hp"]) * damage_percent)))
+		state["hp"] = maxi(1, int(state["hp"]) - damage_amount)
 
 ## Завершена ли вылазка?
 func is_complete() -> bool:

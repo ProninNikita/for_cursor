@@ -142,6 +142,7 @@ func load_game(slot: int) -> bool:
 	for raid_entry in data.get("completed_raids", []):
 		if raid_entry is Dictionary:
 			GameState.completed_raids.append(raid_entry)
+	GameState.clear_combat_history()
 
 	return true
 
@@ -162,3 +163,4 @@ func start_new_game() -> void:
 	GameState.tower_elevation.reset()
 	GameState.active_raid = null
 	GameState.completed_raids.clear()
+	GameState.clear_combat_history()

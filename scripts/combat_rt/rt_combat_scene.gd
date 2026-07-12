@@ -9,54 +9,94 @@ const UnitScript = preload("res://scripts/combat_rt/rt_battle_unit.gd")
 const PerceptionScript = preload("res://scripts/combat_rt/rt_perception.gd")
 const BrainScript = preload("res://scripts/combat_rt/rt_utility_brain.gd")
 const ResolverScript = preload("res://scripts/combat_rt/rt_action_resolver.gd")
+const CombatContextScript = preload("res://scripts/combat_rt/rt_combat_context.gd")
+const CombatResultScript = preload("res://scripts/combat_rt/rt_combat_result.gd")
+const CombatConfigScript = preload("res://scripts/combat_rt/rt_combat_config.gd")
+const PostBattleServiceScript = preload("res://scripts/combat_rt/rt_post_battle_service.gd")
+const CombatControllerScript = preload("res://scripts/combat_rt/rt_combat_controller.gd")
+const CombatRendererScript = preload("res://scripts/combat_rt/rt_combat_renderer.gd")
+const CombatUIFormatterScript = preload("res://scripts/combat_rt/rt_combat_ui_formatter.gd")
 
 const MAP_ORIGIN := Vector2(38, 94)
-const DECISION_INTERVAL := 0.35
-const MAX_LOG_LINES := 14
-const SPEED_MODES := [0.5, 1.0, 2.0, 4.0]
+const ENEMY_ARCHETYPES_PATH := "res://data/rt_enemies.json"
 
 var _battlefield = BattlefieldScript.new()
 var _perception = PerceptionScript.new()
 var _brain = BrainScript.new()
 var _resolver = ResolverScript.new()
+var _post_battle_service = PostBattleServiceScript.new()
+var _combat_controller = CombatControllerScript.new()
+var _combat_renderer = CombatRendererScript.new()
+var _ui_formatter = CombatUIFormatterScript.new()
 var _rng := RandomNumberGenerator.new()
 var _units: Array = []
 var _intents: Dictionary = {}
 var _decision_timer: float = 0.0
 var _battle_finished := false
 var _paused := false
+var _freeze_ai := false
+var _fast_forward_to_end := false
 var _time_scale := 0.5
 var _speed_index: int = 0
 var _log_lines: PackedStringArray = []
 var _floating_texts: Array[Dictionary] = []
 var _visual_effects: Array[Dictionary] = []
 var _focus_unit_id: String = ""
-var _is_tower_elevation: bool = false
-var _is_raid_combat: bool = false
-var _current_tower_floor: int = 0
+var _battle_context = CombatContextScript.new()
+var _combat_config = CombatConfigScript.new()
+var _last_result = null
 var _battle_elapsed_seconds: float = 0.0
+var _battle_finish_reason: String = ""
+var _battle_finish_detail: String = ""
 var _battle_start_hp: Dictionary = {}
 var _battle_damage_dealt: Dictionary = {}
 var _battle_healing_done: Dictionary = {}
+var _battle_ability_usage: Dictionary = {}
+var _battle_damage_taken: Dictionary = {}
+var _battle_successful_actions: Dictionary = {}
+var _battle_dangerous_enemies: Dictionary = {}
+var _battle_help_received: Dictionary = {}
+var _battle_cover_seconds: Dictionary = {}
+var _battle_alone_seconds: Dictionary = {}
+var _battle_low_visibility_seconds: Dictionary = {}
+var _battle_near_leader_seconds: Dictionary = {}
+var _battle_ranged_damage: Dictionary = {}
+var _battle_decision_usage: Dictionary = {}
+var _enemy_archetypes: Dictionary = {}
+var _leader_unit_id: String = ""
+var _squad_style: String = "balanced"
+var _debug_setup_index: int = 0
 
 var _return_btn: Button
 var _pause_btn: Button
 var _speed_btn: Button
+var _freeze_btn: Button
+var _fast_finish_btn: Button
+var _setup_btn: Button
+var _debug_btn: Button
+var _fog_btn: Button
 var _status_label: Label
 var _focus_label: Label
 var _unit_list_label: RichTextLabel
 var _log_label: RichTextLabel
+var _bottom_label: Label
+var _audio_player: AudioStreamPlayer
 var _end_panel: PanelContainer
 var _end_title: Label
 var _end_detail: Label
 var _end_btn: Button
+var _repeat_btn: Button
+var _debug_perception_overlay := false
+var _fog_of_war_enabled := true
+var _player_visible_tiles: Dictionary = {}
+var _player_known_tiles: Dictionary = {}
 
 func _ready() -> void:
 	AbilityRegistry.initialize()
-	_rng.randomize()
-	_resolver.rng.randomize()
-	_create_ui()
 	_capture_battle_context()
+	_setup_combat_config()
+	_create_ui()
+	_create_audio()
 	_setup_battle()
 	set_process(true)
 	queue_redraw()
@@ -70,11 +110,15 @@ func _process(delta: float) -> void:
 
 	var scaled_delta := delta * _time_scale
 	_battle_elapsed_seconds += scaled_delta
-	_decision_timer -= scaled_delta
-	if _decision_timer <= 0.0:
-		_decision_timer = DECISION_INTERVAL
+	_update_enemy_phases()
+	if not _freeze_ai:
+		_decision_timer -= scaled_delta
+	if not _freeze_ai and _decision_timer <= 0.0:
+		_decision_timer = _combat_config.decision_interval
 		_update_perception_and_intents()
 
+	_battlefield.rebuild_occupancy(_units)
+	_resolver.active_units = _units
 	for unit in _units:
 		var intent: Dictionary = _intents.get(unit.unit_id, {"type": "hold", "reason": "ждёт", "destination": unit.grid_pos})
 		var messages: Array[String] = _resolver.update_unit(unit, scaled_delta, intent, _battlefield, MAP_ORIGIN)
@@ -83,7 +127,9 @@ func _process(delta: float) -> void:
 		for event in _resolver.consume_events():
 			_record_resolver_event(event)
 
+	_track_memory_context(scaled_delta)
 	_check_end()
+	_update_player_knowledge()
 	_refresh_status()
 	queue_redraw()
 
@@ -112,8 +158,38 @@ func _create_ui() -> void:
 	_speed_btn.pressed.connect(_on_speed_pressed)
 	top_bar.add_child(_speed_btn)
 
+	_freeze_btn = Button.new()
+	_freeze_btn.text = "AI"
+	_freeze_btn.set_meta("qa_id", "combat_rt.freeze_ai")
+	_freeze_btn.pressed.connect(_on_freeze_pressed)
+	top_bar.add_child(_freeze_btn)
+
+	_fast_finish_btn = Button.new()
+	_fast_finish_btn.text = "До конца"
+	_fast_finish_btn.set_meta("qa_id", "combat_rt.fast_finish")
+	_fast_finish_btn.pressed.connect(_on_fast_finish_pressed)
+	top_bar.add_child(_fast_finish_btn)
+
+	_setup_btn = Button.new()
+	_setup_btn.text = "Сетап"
+	_setup_btn.set_meta("qa_id", "combat_rt.setup")
+	_setup_btn.pressed.connect(_on_setup_pressed)
+	top_bar.add_child(_setup_btn)
+
+	_debug_btn = Button.new()
+	_debug_btn.text = "Debug"
+	_debug_btn.set_meta("qa_id", "combat_rt.debug")
+	_debug_btn.pressed.connect(_on_debug_pressed)
+	top_bar.add_child(_debug_btn)
+
+	_fog_btn = Button.new()
+	_fog_btn.text = "Туман on"
+	_fog_btn.set_meta("qa_id", "combat_rt.fog")
+	_fog_btn.pressed.connect(_on_fog_pressed)
+	top_bar.add_child(_fog_btn)
+
 	var title := Label.new()
-	title.text = "Real-time бой: обзор, укрытия, страх, намерения"
+	title.text = "Бой"
 	title.add_theme_font_size_override("font_size", 18)
 	top_bar.add_child(title)
 
@@ -125,14 +201,14 @@ func _create_ui() -> void:
 
 	_focus_label = Label.new()
 	_focus_label.position = Vector2(850, 136)
-	_focus_label.size = Vector2(390, 82)
+	_focus_label.size = Vector2(390, 116)
 	_focus_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_focus_label.add_theme_font_size_override("font_size", 13)
 	add_child(_focus_label)
 
 	_unit_list_label = RichTextLabel.new()
-	_unit_list_label.position = Vector2(850, 220)
-	_unit_list_label.size = Vector2(390, 174)
+	_unit_list_label.position = Vector2(850, 260)
+	_unit_list_label.size = Vector2(390, 136)
 	_unit_list_label.bbcode_enabled = false
 	_unit_list_label.scroll_active = false
 	_unit_list_label.add_theme_font_size_override("normal_font_size", 12)
@@ -145,7 +221,25 @@ func _create_ui() -> void:
 	_log_label.scroll_following = true
 	add_child(_log_label)
 
+	_bottom_label = Label.new()
+	_bottom_label.position = Vector2(38, 652)
+	_bottom_label.size = Vector2(790, 26)
+	_bottom_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_bottom_label.add_theme_font_size_override("font_size", 13)
+	_bottom_label.add_theme_color_override("font_color", Color(0.82, 0.86, 0.88))
+	add_child(_bottom_label)
+
 	_create_end_panel()
+
+func _create_audio() -> void:
+	_audio_player = AudioStreamPlayer.new()
+	_audio_player.volume_db = -18.0
+	var stream := AudioStreamGenerator.new()
+	stream.mix_rate = 22050.0
+	stream.buffer_length = 0.12
+	_audio_player.stream = stream
+	add_child(_audio_player)
+	_audio_player.play()
 
 func _create_end_panel() -> void:
 	_end_panel = PanelContainer.new()
@@ -209,20 +303,58 @@ func _create_end_panel() -> void:
 	_end_btn.pressed.connect(_on_end_return_pressed)
 	box.add_child(_end_btn)
 
+	_repeat_btn = Button.new()
+	_repeat_btn.text = "Повторить тренировку"
+	_repeat_btn.custom_minimum_size = Vector2(0, 34)
+	_repeat_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_repeat_btn.visible = false
+	_repeat_btn.set_meta("qa_id", "combat.repeat_training")
+	_repeat_btn.pressed.connect(_on_repeat_training_pressed)
+	box.add_child(_repeat_btn)
+
 func _capture_battle_context() -> void:
-	_is_tower_elevation = GameState.is_tower_elevation
-	_is_raid_combat = not GameState.pending_raid_event.is_empty()
-	_current_tower_floor = GameState.pending_tower_floor
+	_battle_context = CombatContextScript.new()
+	_battle_context.setup_from_game_state()
+
+func _setup_combat_config() -> void:
+	_combat_config = CombatConfigScript.new()
+	_combat_config.setup_from_context(_battle_context)
+	_combat_config.apply_to_rng(_rng, "scene")
+	_combat_config.apply_to_rng(_resolver.rng, "resolver")
+	_resolver.damage_multiplier = _combat_config.damage_multiplier
+	_time_scale = _combat_config.default_time_scale
+	_speed_index = _combat_config.default_speed_index()
 
 func _setup_battle() -> void:
-	_battlefield.setup_test_arena()
+	if not _battlefield.setup_arena(_battle_context.arena_id):
+		_battlefield.setup_test_arena()
+	_load_enemy_archetypes()
 	_units.clear()
 	_intents.clear()
 	_log_lines.clear()
+	_player_visible_tiles.clear()
+	_player_known_tiles.clear()
 	_battle_elapsed_seconds = 0.0
+	_battle_finish_reason = ""
+	_battle_finish_detail = ""
+	_last_result = null
 	_battle_start_hp.clear()
 	_battle_damage_dealt.clear()
 	_battle_healing_done.clear()
+	_battle_ability_usage.clear()
+	_battle_damage_taken.clear()
+	_battle_successful_actions.clear()
+	_battle_dangerous_enemies.clear()
+	_battle_help_received.clear()
+	_battle_cover_seconds.clear()
+	_battle_alone_seconds.clear()
+	_battle_low_visibility_seconds.clear()
+	_battle_near_leader_seconds.clear()
+	_battle_ranged_damage.clear()
+	_battle_decision_usage.clear()
+	_leader_unit_id = ""
+	_squad_style = "balanced"
+	_fast_forward_to_end = false
 
 	var squad := _combat_squad_or_demo()
 	for i in squad.size():
@@ -234,6 +366,15 @@ func _setup_battle() -> void:
 		_battle_start_hp[squad[i].id] = battle_unit.current_hp
 		_battle_damage_dealt[squad[i].id] = 0
 		_battle_healing_done[squad[i].id] = 0
+		_battle_damage_taken[squad[i].id] = 0
+		_battle_successful_actions[squad[i].id] = {}
+		_battle_dangerous_enemies[squad[i].id] = {}
+		_battle_help_received[squad[i].id] = 0
+		_battle_cover_seconds[squad[i].id] = 0.0
+		_battle_alone_seconds[squad[i].id] = 0.0
+		_battle_low_visibility_seconds[squad[i].id] = 0.0
+		_battle_near_leader_seconds[squad[i].id] = 0.0
+		_battle_ranged_damage[squad[i].id] = 0
 
 	var enemies := _build_enemy_units()
 	for i in enemies.size():
@@ -241,15 +382,268 @@ func _setup_battle() -> void:
 		var spawn: Vector2i = _battlefield.enemy_spawns[i % _battlefield.enemy_spawns.size()]
 		var unit = UnitScript.new()
 		unit.setup_from_battle_unit(enemy_unit, "enemy_%d" % i, spawn, MAP_ORIGIN, _battlefield)
-		unit.apply_enemy_profile()
+		unit.apply_enemy_profile(enemy_unit.enemy_profile)
 		_units.append(unit)
 
-	_log_line("Симуляция началась: юниты действуют одновременно.")
-	_log_line("Конусы обзора, укрытия, вода, засады и страх уже подключены как базовый слой.")
+	_apply_context_modifiers_to_units()
+	_assign_squad_leader_and_style()
+	_log_line("Бой начался: юниты действуют одновременно.")
+	_log_line(_battle_context.threat_text())
+	_play_audio_cue("battle_start")
+	_battlefield.rebuild_occupancy(_units)
 	if not _units.is_empty():
 		_focus_unit_id = _units[0].unit_id
 	_update_perception_and_intents()
+	_update_player_knowledge()
 	_refresh_status()
+
+func _assign_squad_leader_and_style() -> void:
+	var leader = _best_leader_candidate()
+	if leader == null:
+		return
+	_leader_unit_id = leader.unit_id
+	_squad_style = _squad_style_for_leader(leader)
+	_apply_squad_leader_context()
+	_log_line("Лидер отряда: %s, стиль: %s." % [leader.display_name, _squad_style_label(_squad_style)])
+
+func _best_leader_candidate():
+	var best = null
+	var best_score: float = -INF
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		var score: float = unit.brain_value("leader_trust") * 1.35
+		score += unit.brain_value("teamwork") * 0.9
+		score += unit.brain_value("skill_patience") * 0.55
+		score += float(unit.get_stat("initiative")) * 0.045
+		score += unit.morale * 0.35
+		var class_id: String = _unit_class_id(unit)
+		match class_id:
+			"tactician":
+				score += 0.75
+			"defender":
+				score += 0.25
+			"healer":
+				score += 0.16
+			"berserker":
+				score -= 0.12
+			_:
+				pass
+		if score > best_score:
+			best = unit
+			best_score = score
+	return best
+
+func _squad_style_for_leader(leader) -> String:
+	if leader == null:
+		return "balanced"
+	var class_id: String = _unit_class_id(leader)
+	if class_id == "tactician":
+		return "cohesive"
+	var aggression: float = leader.brain_value("aggression")
+	var caution: float = leader.brain_value("caution")
+	var teamwork: float = leader.brain_value("teamwork")
+	var self_preserve: float = leader.brain_value("self_preserve")
+	if aggression > caution + 0.16 and aggression > teamwork:
+		return "aggressive"
+	if caution + self_preserve > aggression + 0.28:
+		return "cautious"
+	if teamwork >= 0.62:
+		return "cohesive"
+	return "balanced"
+
+func _apply_squad_leader_context() -> void:
+	var leader = _get_unit_by_id(_leader_unit_id)
+	var anchor: Vector2i = leader.grid_pos if leader != null and leader.is_alive() else _allied_group_anchor()
+	var focus = _squad_focus_enemy()
+	var formation_slots: Dictionary = _formation_slots_for_squad(leader, anchor, focus)
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY:
+			continue
+		unit.is_leader = unit.unit_id == _leader_unit_id
+		unit.leader_unit_id = _leader_unit_id
+		unit.leader_name = leader.display_name if leader != null else ""
+		unit.squad_style = _squad_style
+		unit.squad_anchor = anchor
+		unit.squad_focus_target_id = focus.unit_id if focus != null else ""
+		unit.squad_focus_target_name = focus.display_name if focus != null else ""
+		unit.squad_focus_target_pos = focus.grid_pos if focus != null else Vector2i.ZERO
+		unit.formation_role = _formation_role_for_unit(unit)
+		unit.formation_slot = formation_slots.get(unit.unit_id, anchor)
+		unit.formation_distance = Vector2(unit.grid_pos - unit.formation_slot).length()
+
+func _update_squad_context() -> void:
+	var leader = _get_unit_by_id(_leader_unit_id)
+	if leader == null or not leader.is_alive():
+		var promoted = _best_leader_candidate()
+		if promoted != null and promoted.unit_id != _leader_unit_id:
+			_leader_unit_id = promoted.unit_id
+			_squad_style = _squad_style_for_leader(promoted)
+			_log_line("Новый лидер отряда: %s, стиль: %s." % [promoted.display_name, _squad_style_label(_squad_style)])
+	_apply_squad_leader_context()
+	_apply_leader_morale()
+
+func _apply_leader_morale() -> void:
+	var leader = _get_unit_by_id(_leader_unit_id)
+	if leader == null or not leader.is_alive():
+		return
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		if unit == leader:
+			unit.morale = clampf(unit.morale + 0.006, 0.0, 1.0)
+			continue
+		var distance: float = Vector2(unit.grid_pos - leader.grid_pos).length()
+		var trust: float = unit.brain_value("leader_trust")
+		if distance <= 5.0:
+			unit.morale = clampf(unit.morale + 0.004 + trust * 0.004, 0.0, 1.0)
+			unit.fear = clampf(unit.fear - trust * 0.004, 0.0, 1.0)
+		elif distance >= 8.0:
+			unit.morale = clampf(unit.morale - unit.brain_value("solitude_fear") * 0.006, 0.0, 1.0)
+
+func _squad_focus_enemy():
+	var scores: Dictionary = {}
+	var refs: Dictionary = {}
+	for ally in _units:
+		if ally.side != BattleUnit.UnitSide.ALLY or not ally.is_alive():
+			continue
+		for enemy in ally.visible_enemies:
+			if enemy == null or not enemy.is_alive():
+				continue
+			var score: float = float(scores.get(enemy.unit_id, 0.0))
+			score += 1.0 + (1.0 - enemy.hp_ratio()) * 1.15
+			if enemy.hp_ratio() <= 0.35:
+				score += 0.65
+			scores[enemy.unit_id] = score
+			refs[enemy.unit_id] = enemy
+	var best = null
+	var best_score: float = 0.0
+	for unit_id in scores.keys():
+		var score: float = float(scores[unit_id])
+		if score > best_score:
+			best = refs[unit_id]
+			best_score = score
+	if best_score < 1.8:
+		return null
+	return best
+
+func _formation_slots_for_squad(leader, anchor: Vector2i, focus) -> Dictionary:
+	var slots: Dictionary = {}
+	var alive_allies: Array = []
+	for unit in _units:
+		if unit.side == BattleUnit.UnitSide.ALLY and unit.is_alive():
+			alive_allies.append(unit)
+	if alive_allies.is_empty():
+		return slots
+
+	var forward: Vector2 = Vector2.RIGHT
+	if focus != null:
+		forward = Vector2(focus.grid_pos - anchor)
+	elif leader != null and leader.facing.length() > 0.01:
+		forward = leader.facing
+	if forward.length() <= 0.01:
+		forward = Vector2.RIGHT
+	forward = forward.normalized()
+	var right: Vector2 = Vector2(-forward.y, forward.x)
+
+	var role_counts: Dictionary = {}
+	for unit in alive_allies:
+		var role: String = _formation_role_for_unit(unit)
+		var index: int = int(role_counts.get(role, 0))
+		role_counts[role] = index + 1
+		var offset: Vector2 = _formation_offset(role, index, forward, right)
+		var ideal: Vector2i = anchor + Vector2i(roundi(offset.x), roundi(offset.y))
+		slots[unit.unit_id] = _nearest_formation_slot(unit, ideal, anchor)
+	return slots
+
+func _formation_role_for_unit(unit) -> String:
+	if unit == null:
+		return "line"
+	if unit.is_leader:
+		return "center"
+	var class_id: String = _unit_class_id(unit)
+	if class_id in ["healer", "mage", "tactician"]:
+		return "backline"
+	if class_id in ["scout", "assassin"]:
+		return "flank"
+	if class_id == "defender" or (unit.battle_unit != null and unit.battle_unit.def >= 7):
+		return "front"
+	if unit.attack_range_tiles > 2.25:
+		return "backline"
+	return "front"
+
+func _formation_offset(role: String, index: int, forward: Vector2, right: Vector2) -> Vector2:
+	var side_sign: float = 1.0 if index % 2 == 0 else -1.0
+	var lane: float = float((index + 1) / 2)
+	match role:
+		"center":
+			return Vector2.ZERO
+		"front":
+			return forward * 1.7 + right * side_sign * lane
+		"backline":
+			return -forward * 2.0 + right * side_sign * lane
+		"flank":
+			return right * side_sign * (2.0 + lane) + forward * 0.4
+		_:
+			return right * side_sign * lane
+
+func _nearest_formation_slot(unit, ideal: Vector2i, anchor: Vector2i) -> Vector2i:
+	if _formation_slot_walkable_for(unit, ideal):
+		return ideal
+	var best: Vector2i = unit.grid_pos
+	var best_score: float = INF
+	for radius in range(1, 4):
+		for y in range(ideal.y - radius, ideal.y + radius + 1):
+			for x in range(ideal.x - radius, ideal.x + radius + 1):
+				var candidate := Vector2i(x, y)
+				if not _formation_slot_walkable_for(unit, candidate):
+					continue
+				var score: float = Vector2(candidate - ideal).length() + Vector2(candidate - anchor).length() * 0.08
+				if score < best_score:
+					best = candidate
+					best_score = score
+		if best != unit.grid_pos:
+			return best
+	return unit.grid_pos
+
+func _formation_slot_walkable_for(unit, pos: Vector2i) -> bool:
+	if not _battlefield.in_bounds(pos) or not _battlefield.is_walkable(pos):
+		return false
+	if _battlefield.is_occupied(pos, unit.unit_id):
+		return false
+	if pos != unit.grid_pos and _battlefield.find_path(unit.grid_pos, pos, unit.unit_id, false).is_empty():
+		return false
+	return true
+
+func _allied_group_anchor() -> Vector2i:
+	var total := Vector2.ZERO
+	var count := 0
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		total += Vector2(unit.grid_pos)
+		count += 1
+	if count <= 0:
+		return Vector2i.ZERO
+	var average: Vector2 = total / float(count)
+	return Vector2i(roundi(average.x), roundi(average.y))
+
+func _get_unit_by_id(unit_id: String):
+	for unit in _units:
+		if unit.unit_id == unit_id:
+			return unit
+	return null
+
+func _squad_style_label(style_id: String) -> String:
+	match style_id:
+		"aggressive":
+			return "агрессивно"
+		"cautious":
+			return "осторожно"
+		"cohesive":
+			return "держаться вместе"
+		_:
+			return "сбалансированно"
 
 func _combat_squad_or_demo() -> Array[CharacterData]:
 	var squad: Array[CharacterData] = []
@@ -308,80 +702,307 @@ func _build_enemy_units() -> Array[BattleUnit]:
 		var enemy_type := str(entry.get("type", "goblin"))
 		var count := int(entry.get("count", 1))
 		for _i in count:
-			enemies.append(_make_enemy_unit(enemy_type, index))
+			enemies.append(_make_enemy_unit(enemy_type, index, entry))
 			index += 1
 	if enemies.is_empty():
 		for i in 3:
-			enemies.append(_make_enemy_unit("goblin", i))
+			enemies.append(_make_enemy_unit("goblin", i, {}))
 	return enemies
 
 func _enemy_plan_for_context() -> Array:
-	if _is_raid_combat:
-		return GameState.pending_raid_event.get("enemies", [])
-	if _is_tower_elevation and GameState.tower_elevation != null:
-		var floor_data := GameState.tower_elevation.get_floor_data(_current_tower_floor)
-		return floor_data.get("enemies", [])
-	return [{"type": "goblin", "count": 3}]
+	return _battle_context.enemy_plan.duplicate(true)
 
-func _make_enemy_unit(enemy_type: String, index: int) -> BattleUnit:
-	var unit := BattleUnit.goblin(index, _rng)
-	match enemy_type:
-		"orc":
-			unit.display_name = "Орк %d" % (index + 1)
-			unit.max_hp = 28
-			unit.current_hp = unit.max_hp
-			unit.atk = 6
-			unit.def = 3
-			unit.initiative = 3
-		"troll":
-			unit.display_name = "Тролль %d" % (index + 1)
-			unit.max_hp = 48
-			unit.current_hp = unit.max_hp
-			unit.atk = 8
-			unit.def = 5
-			unit.initiative = 2
-		"boss":
-			unit.display_name = "Хранитель"
-			unit.max_hp = 86
-			unit.current_hp = unit.max_hp
-			unit.atk = 11
-			unit.def = 7
-			unit.magic = 4
-			unit.initiative = 4
-		_:
-			unit.display_name = "Гоблин %d" % (index + 1)
+func _load_enemy_archetypes() -> void:
+	_enemy_archetypes.clear()
+	var file := FileAccess.open(ENEMY_ARCHETYPES_PATH, FileAccess.READ)
+	if file == null:
+		push_warning("RT enemy archetypes not found: " + ENEMY_ARCHETYPES_PATH)
+		return
+	var data = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not (data is Dictionary):
+		push_warning("RT enemy archetypes JSON is invalid.")
+		return
+	var parsed_data: Dictionary = data
+	_enemy_archetypes = parsed_data.get("enemies", {})
+
+func _make_enemy_unit(enemy_type: String, index: int, plan_entry: Dictionary) -> BattleUnit:
+	var archetype := _enemy_archetype(enemy_type)
+	var stats: Dictionary = archetype.get("stats", {})
+	var scale: float = _enemy_scale_for_plan(plan_entry)
+	var stat_scale: float = 1.0 + (scale - 1.0) * 0.55
+
+	var unit := BattleUnit.new()
+	unit.side = BattleUnit.UnitSide.ENEMY
+	unit.character_data = null
+	unit.display_name = _enemy_display_name(archetype, index)
+	unit.max_hp = maxi(1, roundi(float(stats.get("hp", 14)) * scale))
+	unit.current_hp = unit.max_hp
+	unit.atk = maxi(1, roundi(float(stats.get("atk", 3)) * stat_scale))
+	unit.def = maxi(0, roundi(float(stats.get("def", 1)) * stat_scale))
+	unit.magic = maxi(0, roundi(float(stats.get("magic", 0)) * stat_scale))
+	unit.initiative = maxi(1, roundi(float(stats.get("initiative", 4)) * stat_scale))
+	unit.tie_breaker = _rng.randi()
+	unit.battle_state = BattleState.new()
+	unit.enemy_profile = _enemy_profile_from_archetype(archetype)
+	var ability_ids: Array = archetype.get("abilities", ["goblin_basic_attack"])
+	unit.load_abilities_by_ids(ability_ids)
 	return unit
+
+func _enemy_archetype(enemy_type: String) -> Dictionary:
+	if _enemy_archetypes.has(enemy_type):
+		var archetype: Dictionary = _enemy_archetypes[enemy_type]
+		return archetype
+	push_warning("RT enemy archetype not found: " + enemy_type)
+	return _enemy_archetypes.get("goblin", {
+		"name": "Гоблин",
+		"numbered": true,
+		"stats": {"hp": 14, "atk": 3, "def": 1, "magic": 0, "initiative": 4},
+		"abilities": ["goblin_basic_attack"],
+		"vision": {"radius_tiles": 5.2, "angle_deg": 130.0},
+		"morale": 0.58,
+		"ai": {}
+	})
+
+func _enemy_scale_for_plan(plan_entry: Dictionary) -> float:
+	var scale: float = float(plan_entry.get("scale", 1.0))
+	scale *= _battle_context.modifier_float("enemy_scale", 1.0)
+	return maxf(0.35, scale)
+
+func _enemy_display_name(archetype: Dictionary, index: int) -> String:
+	var base_name := str(archetype.get("name", "Гоблин"))
+	if not bool(archetype.get("numbered", true)):
+		return base_name
+	return "%s %d" % [base_name, index + 1]
+
+func _enemy_profile_from_archetype(archetype: Dictionary) -> Dictionary:
+	return {
+		"vision": archetype.get("vision", {}).duplicate(true),
+		"morale": float(archetype.get("morale", 0.62)),
+		"stealth": float(archetype.get("stealth", 0.0)),
+		"ai": archetype.get("ai", {}).duplicate(true),
+		"danger": float(archetype.get("danger", 1.0)),
+		"reward_weight": float(archetype.get("reward_weight", 1.0)),
+		"phases": archetype.get("phases", []).duplicate(true)
+	}
+
+func _apply_context_modifiers_to_units() -> void:
+	var ally_fear := _battle_context.modifier_float("initial_ally_fear", 0.0)
+	var enemy_morale := _battle_context.modifier_float("enemy_morale_bonus", 0.0)
+	var low_visibility := _battle_context.modifier_float("low_visibility_stress", 0.0)
+	for unit in _units:
+		if unit.side == BattleUnit.UnitSide.ALLY:
+			unit.fear = clampf(unit.fear + ally_fear, 0.0, 1.0)
+			unit.visibility_stress = clampf(unit.visibility_stress + low_visibility, 0.0, 1.0)
+		else:
+			unit.morale = clampf(unit.morale + enemy_morale, 0.0, 1.0)
+
+func _update_enemy_phases() -> void:
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ENEMY or not unit.is_alive():
+			continue
+		var activated_phases: Array = unit.activate_pending_enemy_phases()
+		for phase in activated_phases:
+			var phase_name := str(phase.get("name", "новая фаза"))
+			var message := str(phase.get("message", "меняет тактику."))
+			_log_line("%s: %s" % [unit.display_name, message])
+			_add_floating_text(unit.world_position + Vector2(0, -34), phase_name, Color(1.0, 0.54, 0.22), 1.35, Vector2(0, -30))
+			_add_visual_effect("ring", unit.world_position, unit.world_position, Color(1.0, 0.42, 0.18), 0.62, 30.0)
 
 func _update_perception_and_intents() -> void:
 	_perception.update(_units, _battlefield)
+	_update_squad_context()
+	_update_visibility_context()
 	for unit in _units:
 		if not unit.is_alive():
 			continue
+		if unit.lost_target_timer > 0.0 and unit.lost_target_notice_timer <= 0.0:
+			_log_line("%s потерял цель." % unit.display_name)
+			_add_floating_text(unit.world_position, "потерял цель", Color(0.7, 0.82, 0.95), 1.1, Vector2(0, -22))
+			unit.lost_target_notice_timer = 2.0
+		if unit.visible_enemies.is_empty() and unit.heard_noise_timer > 0.0 and unit.heard_noise_notice_timer <= 0.0:
+			_log_line("%s слышит шум." % unit.display_name)
+			_add_floating_text(unit.world_position, "слышит шум", Color(0.62, 0.9, 1.0), 1.1, Vector2(0, -22))
+			unit.heard_noise_notice_timer = 2.5
+		if unit.hidden and unit.stealth_notice_timer <= 0.0:
+			_log_line("%s скрывается." % unit.display_name)
+			_add_floating_text(unit.world_position, "скрыт", Color(0.52, 1.0, 0.64), 1.1, Vector2(0, -22))
+			unit.stealth_notice_timer = 3.5
 		var previous := str(_intents.get(unit.unit_id, {}).get("type", ""))
 		var intent: Dictionary = _brain.choose_intent(unit, _units, _battlefield, _rng)
 		_intents[unit.unit_id] = intent
 		var current := str(intent.get("type", "hold"))
+		_record_decision_usage(unit, current)
 		if current != previous:
-			_log_line("%s: %s (%s)." % [unit.display_name, _intent_label(current), intent.get("reason", "")])
+			_log_line("%s: %s (%s%s)." % [unit.display_name, _intent_label(current), intent.get("reason", ""), _intent_debug_suffix(intent)])
 			_add_floating_text(unit.world_position, _intent_float_label(current), _intent_color(current), 1.15, Vector2(0, -22))
 			if unit.side == BattleUnit.UnitSide.ALLY:
 				_focus_unit_id = unit.unit_id
 
+func _update_visibility_context() -> void:
+	var leader = _get_unit_by_id(_leader_unit_id)
+	for unit in _units:
+		unit.visibility_stress = 0.0
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		var stress := _low_visibility_stress(unit)
+		if leader != null and leader.is_alive() and leader != unit:
+			var leader_distance: float = Vector2(unit.grid_pos - leader.grid_pos).length()
+			if leader_distance <= 4.0:
+				stress -= unit.brain_value("leader_trust") * (1.0 - leader_distance / 5.0) * 0.25
+		unit.visibility_stress = clampf(stress, 0.0, 1.0)
+
+func _low_visibility_stress(unit) -> float:
+	var stress := 0.0
+	if unit.visible_enemies.is_empty():
+		if not unit.last_seen_enemies.is_empty():
+			stress += 0.28
+		if unit.lost_target_timer > 0.0:
+			stress += 0.22
+		if unit.heard_noise_timer > 0.0:
+			stress += 0.24 * clampf(unit.heard_noise_strength, 0.35, 1.0)
+	if _battlefield.is_grass(unit.grid_pos):
+		stress += 0.1
+	if _battlefield.is_dark(unit.grid_pos):
+		stress += 0.24
+
+	var local_visibility := _local_visibility_ratio(unit, 3)
+	stress += clampf((0.42 - local_visibility) * 0.55, 0.0, 0.25)
+	return clampf(stress, 0.0, 1.0)
+
+func _local_visibility_ratio(unit, radius: int) -> float:
+	var checked := 0
+	var visible := 0
+	for y in range(maxi(0, unit.grid_pos.y - radius), mini(_battlefield.height, unit.grid_pos.y + radius + 1)):
+		for x in range(maxi(0, unit.grid_pos.x - radius), mini(_battlefield.width, unit.grid_pos.x + radius + 1)):
+			var pos := Vector2i(x, y)
+			if not _battlefield.is_walkable(pos):
+				continue
+			checked += 1
+			if _ally_observes_tile(unit, pos):
+				visible += 1
+	if checked <= 0:
+		return 1.0
+	return float(visible) / float(checked)
+
+func _update_player_knowledge() -> void:
+	_player_visible_tiles.clear()
+	for unit in _units:
+		if not unit.is_alive() or unit.side != BattleUnit.UnitSide.ALLY:
+			continue
+		var radius := ceili(unit.vision_radius_tiles)
+		for y in range(maxi(0, unit.grid_pos.y - radius), mini(_battlefield.height, unit.grid_pos.y + radius + 1)):
+			for x in range(maxi(0, unit.grid_pos.x - radius), mini(_battlefield.width, unit.grid_pos.x + radius + 1)):
+				var pos := Vector2i(x, y)
+				if not _ally_observes_tile(unit, pos):
+					continue
+				_player_visible_tiles[pos] = true
+				_player_known_tiles[pos] = true
+
+func _ally_observes_tile(unit, pos: Vector2i) -> bool:
+	var delta: Vector2 = Vector2(pos - unit.grid_pos)
+	var distance: float = delta.length()
+	if distance > unit.vision_radius_tiles:
+		return false
+	if distance > 1.25:
+		var forward: Vector2 = unit.facing.normalized()
+		if forward.length() <= 0.01:
+			forward = Vector2.RIGHT
+		var direction: Vector2 = delta.normalized()
+		var angle: float = rad_to_deg(acos(clampf(forward.dot(direction), -1.0, 1.0)))
+		if angle > unit.vision_angle_deg * 0.5:
+			return false
+	return _battlefield.has_line_of_sight(unit.grid_pos, pos)
+
+func _unit_visible_to_player(unit) -> bool:
+	if not _fog_of_war_enabled or _debug_perception_overlay:
+		return true
+	if unit.side == BattleUnit.UnitSide.ALLY:
+		return true
+	return bool(_player_visible_tiles.get(unit.grid_pos, false))
+
 func _check_end() -> void:
 	if _battle_finished:
 		return
-	var allies_alive := false
-	var enemies_alive := false
-	for unit in _units:
-		if not unit.is_alive():
-			continue
-		if unit.side == BattleUnit.UnitSide.ALLY:
-			allies_alive = true
-		else:
-			enemies_alive = true
-	if allies_alive and enemies_alive:
+	var finish: Dictionary = _combat_controller.evaluate_finish(_units, _battle_context, _battle_elapsed_seconds)
+	if finish.is_empty():
 		return
-	_finish_battle(allies_alive)
+	_battle_finish_reason = str(finish.get("reason", ""))
+	_battle_finish_detail = str(finish.get("detail", ""))
+	_finish_battle(bool(finish.get("victory", false)))
+
+func _victory_condition_met(allies_alive: int, enemies_alive: int) -> bool:
+	if allies_alive <= 0:
+		return false
+	var condition := _battle_context.victory_string("type", "eliminate_enemies")
+	match condition:
+		"survive_seconds":
+			var seconds := _battle_context.victory_float("seconds", 45.0)
+			if _battle_elapsed_seconds >= seconds:
+				_battle_finish_reason = "survived"
+				_battle_finish_detail = "Отряд продержался %s." % CombatResultScript.new().format_duration(seconds)
+				return true
+		"defeat_boss":
+			if not _boss_enemy_alive():
+				_battle_finish_reason = "boss_defeated"
+				_battle_finish_detail = "Ключевая цель выведена из боя."
+				return true
+		_:
+			if enemies_alive <= 0:
+				_battle_finish_reason = "elimination"
+				_battle_finish_detail = "Все враги выведены из боя."
+				return true
+	return false
+
+func _defeat_condition_met(allies_alive: int, enemies_alive: int) -> bool:
+	if allies_alive <= 0:
+		_battle_finish_reason = "wipe"
+		_battle_finish_detail = "Все союзники выведены из боя."
+		return true
+	var time_limit := _battle_context.defeat_float("time_limit_seconds", 0.0)
+	if time_limit > 0.0 and _battle_elapsed_seconds >= time_limit and enemies_alive > 0:
+		_battle_finish_reason = "time_limit"
+		_battle_finish_detail = "Время боя вышло, отряд отходит."
+		return true
+	if not _battle_context.modifier_bool("retreat_enabled", true):
+		return false
+	var retreat_after := _battle_context.defeat_float("retreat_after_seconds", 14.0)
+	if _battle_elapsed_seconds < retreat_after or enemies_alive <= 0:
+		return false
+	var threshold := _battle_context.modifier_float("heavy_loss_threshold", 0.3)
+	var total_allies := maxi(1, _unit_count_for_side(BattleUnit.UnitSide.ALLY))
+	var living_ratio := float(allies_alive) / float(total_allies)
+	if living_ratio <= threshold or _all_living_allies_critical():
+		_battle_finish_reason = "retreat"
+		_battle_finish_detail = "Отряд потерял строй и отступил до полного уничтожения."
+		return true
+	return false
+
+func _boss_enemy_alive() -> bool:
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ENEMY or not unit.is_alive():
+			continue
+		if unit.display_name.find("Хранитель") >= 0 or unit.enemy_danger >= 5.5:
+			return true
+	return false
+
+func _unit_count_for_side(side: int) -> int:
+	var count := 0
+	for unit in _units:
+		if unit.side == side:
+			count += 1
+	return count
+
+func _all_living_allies_critical() -> bool:
+	var living := 0
+	var critical := 0
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		living += 1
+		if unit.hp_ratio() <= 0.22 or unit.has_status("broken"):
+			critical += 1
+	return living > 0 and critical >= living
 
 func _refresh_status() -> void:
 	var allies := 0
@@ -395,21 +1016,30 @@ func _refresh_status() -> void:
 		else:
 			enemies += 1
 		visible_contacts += unit.visible_enemies.size()
-	_status_label.text = "Живые: союзники %d / враги %d\nКонтактов в поле зрения: %d\nСкорость: %.1fx%s" % [
+	var leader = _get_unit_by_id(_leader_unit_id)
+	var leader_name: String = leader.display_name if leader != null else "нет"
+	_status_label.text = "%s  |  %s\nЖивые: союзники %d / враги %d\nЛидер: %s, стиль: %s  |  Контактов: %d  |  %.1fx%s%s" % [
+		_mode_label(),
+		CombatResultScript.new().format_duration(_battle_elapsed_seconds),
 		allies,
 		enemies,
+		leader_name,
+		_squad_style_label(_squad_style),
 		visible_contacts,
 		_time_scale,
-		"  |  Пауза" if _paused else ""
+		"  |  Пауза" if _paused else "",
+		"  |  AI freeze" if _freeze_ai else ""
 	]
 	_refresh_focus_panel()
 	_refresh_unit_list()
 
 func _log_line(message: String) -> void:
 	_log_lines.append(message)
-	while _log_lines.size() > MAX_LOG_LINES:
+	while _log_lines.size() > _combat_config.max_log_lines:
 		_log_lines.remove_at(0)
 	_log_label.text = "\n".join(_log_lines)
+	if _bottom_label != null:
+		_bottom_label.text = "Последнее событие: " + message
 
 func _add_floating_text(world_position: Vector2, text: String, color: Color, ttl: float = 1.0, velocity: Vector2 = Vector2(0, -28)) -> void:
 	if text == "":
@@ -454,60 +1084,125 @@ func _update_visual_effects(delta: float) -> void:
 		if float(item.get("age", 0.0)) >= float(item.get("ttl", 0.28)):
 			_visual_effects.remove_at(i)
 
+func _play_step_cue(tile_type: int) -> void:
+	match tile_type:
+		BattlefieldScript.TileType.WATER:
+			_play_audio_cue("step_water")
+		BattlefieldScript.TileType.DOOR, BattlefieldScript.TileType.NARROW:
+			_play_audio_cue("step_door")
+		_:
+			if _rng.randf() < 0.12:
+				_play_audio_cue("step")
+
+func _play_audio_cue(kind: String) -> void:
+	if _audio_player == null:
+		return
+	var playback := _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
+	if playback == null:
+		return
+	var frequency := 280.0
+	var duration := 0.045
+	var volume := 0.055
+	match kind:
+		"battle_start":
+			frequency = 220.0
+			duration = 0.11
+			volume = 0.035
+		"attack":
+			frequency = 360.0
+			duration = 0.035
+		"hit":
+			frequency = 130.0
+			duration = 0.05
+			volume = 0.075
+		"spell":
+			frequency = 520.0
+			duration = 0.075
+			volume = 0.05
+		"heal":
+			frequency = 660.0
+			duration = 0.08
+			volume = 0.042
+		"buff":
+			frequency = 470.0
+			duration = 0.06
+			volume = 0.04
+		"step_water":
+			frequency = 95.0
+			duration = 0.035
+			volume = 0.032
+		"step_door":
+			frequency = 180.0
+			duration = 0.032
+			volume = 0.04
+		"victory":
+			frequency = 740.0
+			duration = 0.14
+			volume = 0.055
+		"defeat":
+			frequency = 105.0
+			duration = 0.16
+			volume = 0.06
+		_:
+			pass
+	var mix_rate := 22050.0
+	var frame_count := int(mix_rate * duration)
+	for i in range(frame_count):
+		var t := float(i) / mix_rate
+		var fade := 1.0 - float(i) / float(maxi(1, frame_count))
+		var sample := sin(t * frequency * TAU) * volume * fade
+		playback.push_frame(Vector2(sample, sample))
+
 func _finish_battle(victory: bool) -> void:
 	if _battle_finished:
 		return
 	_battle_finished = true
 	_pause_btn.disabled = true
 	_speed_btn.disabled = true
-	_sync_roster_hp()
 	_update_combat_brains(victory)
 
-	var applied_rewards: Dictionary = {}
-	var floor_data: Dictionary = {}
-	if victory:
-		if _is_tower_elevation:
-			floor_data = GameState.tower_elevation.get_floor_data(_current_tower_floor)
-			applied_rewards = GameState.apply_rewards(floor_data.get("reward", {}))
-			GameState.tower_elevation.register_victory(_current_tower_floor)
-			GameState.tower_elevation.advance_to_next_floor()
-		elif _is_raid_combat:
-			_sync_active_raid_hp()
-			GameState.finish_raid_combat(true)
-			if GameState.active_raid != null:
-				GameState.active_raid.complete_combat_event(true)
-		else:
-			applied_rewards = GameState.apply_rewards({"lootboxes": 1})
-	elif _is_raid_combat:
-		_sync_active_raid_hp()
-		GameState.finish_raid_combat(false)
-		if GameState.active_raid != null:
-			GameState.active_raid.complete_combat_event(false)
-
-	_show_end_panel(victory, applied_rewards, floor_data)
-	GameState.clear_pending_combat()
-	GameState.is_tower_elevation = false
-	GameState.pending_tower_floor = 0
-	GameState.pending_raid_event.clear()
+	var applied_rewards: Dictionary = _post_battle_service.apply(victory, _battle_context, _units)
+	_last_result = _build_combat_result(victory, applied_rewards)
+	GameState.record_combat_result(_last_result.to_balance_record())
+	_log_line(_last_result.summary_line())
+	_show_end_panel(victory, applied_rewards)
+	_play_audio_cue("victory" if victory else "defeat")
 	_log_line("RT-бой завершён: %s." % ("отряд выжил" if victory else "отряд уничтожен"))
 
-func _show_end_panel(victory: bool, applied_rewards: Dictionary, floor_data: Dictionary) -> void:
+func _build_combat_result(victory: bool, applied_rewards: Dictionary):
+	var result = CombatResultScript.new()
+	result.setup_from_battle(
+		victory,
+		_battle_context,
+		_combat_config,
+		_units,
+		_battle_damage_dealt,
+		_battle_healing_done,
+		_battle_ability_usage,
+		_battle_decision_usage,
+		applied_rewards,
+		_battle_elapsed_seconds
+	)
+	return result
+
+func _show_end_panel(victory: bool, applied_rewards: Dictionary) -> void:
 	_end_panel.visible = true
 	_style_end_panel_result(victory)
+	_repeat_btn.visible = _battle_context.is_demo()
 	if victory:
 		_end_title.text = "Победа!"
-		if _is_tower_elevation:
+		if _battle_context.is_tower():
 			_end_btn.text = "В башню"
-		elif _is_raid_combat:
+		elif _battle_context.is_raid():
 			_end_btn.text = "К вылазке"
 		else:
 			_end_btn.text = "В город"
 	else:
 		_end_title.text = "Поражение"
 		_end_btn.text = "В город"
-		if _is_raid_combat:
+		if _battle_context.is_raid():
 			_end_btn.text = "К вылазке"
-	_end_detail.text = _end_result_text(victory, applied_rewards, floor_data)
+	_end_detail.text = _end_result_text(victory, applied_rewards)
 
 func _style_end_panel_result(victory: bool) -> void:
 	var accent := Color(0.38, 1.0, 0.64) if victory else Color(1.0, 0.34, 0.24)
@@ -549,34 +1244,44 @@ func _end_button_style(bg_color: Color, border_color: Color) -> StyleBoxFlat:
 	style.corner_radius_bottom_left = 6
 	return style
 
-func _end_result_text(victory: bool, applied_rewards: Dictionary, floor_data: Dictionary) -> String:
+func _end_result_text(victory: bool, applied_rewards: Dictionary) -> String:
 	var sections: PackedStringArray = []
-	sections.append(_end_context_text(victory, floor_data))
+	sections.append(_end_context_text(victory))
+	var consequence := _battle_context.consequence_text(victory)
+	if consequence != "":
+		sections.append(consequence)
 	sections.append(_end_rewards_text(victory, applied_rewards))
 	sections.append(_end_unit_summary_text())
 	sections.append(_end_stats_text())
+	var lessons_text: String = _end_lessons_text()
+	if lessons_text != "":
+		sections.append(lessons_text)
 	return "\n\n".join(sections)
 
-func _end_context_text(victory: bool, floor_data: Dictionary) -> String:
+func _end_context_text(victory: bool) -> String:
+	var detail_suffix := ""
+	if _battle_finish_detail != "":
+		detail_suffix = "\n" + _battle_finish_detail
 	if victory:
-		if _is_tower_elevation:
-			return "%s пройден. Следующий этаж: %d." % [
-				floor_data.get("name", "Этаж %d" % _current_tower_floor),
-				_current_tower_floor + 1
+		if _battle_context.is_tower():
+			return "%s пройден. Следующий этаж: %d.%s" % [
+				_battle_context.floor_name,
+				_battle_context.next_tower_floor(),
+				detail_suffix
 			]
-		if _is_raid_combat:
-			return "Враги разбиты. Отряд продолжает вылазку."
-		return "Враги разбиты. Отряд возвращается в город."
+		if _battle_context.is_raid():
+			return "Враги разбиты. Отряд продолжает вылазку.%s" % detail_suffix
+		return "Враги разбиты. Отряд возвращается в город.%s" % detail_suffix
 
-	if _is_raid_combat:
-		return "Отряд отступил из вылазки. Проверь состояние героев."
-	return "Бой проигран. Выжившие герои обновлены в ростере."
+	if _battle_context.is_raid():
+		return "Отряд отступил из события вылазки.%s" % detail_suffix
+	return "Бой проигран. Выжившие герои обновлены в ростере.%s" % detail_suffix
 
 func _end_rewards_text(victory: bool, applied_rewards: Dictionary) -> String:
 	if not victory:
 		return "Награда: нет."
-	if _is_raid_combat:
-		return "Награда: будет учтена в событии вылазки."
+	if _battle_context.is_raid():
+		return "Награда события: %s\nБудет добавлена к итогам вылазки." % _format_rewards(_battle_context.reward_data)
 	return "Награда: %s\nВсего: %d лутбоксов, %d золота." % [
 		_format_rewards(applied_rewards),
 		GameState.lootboxes_remaining,
@@ -601,53 +1306,91 @@ func _end_unit_summary_text() -> String:
 	return "Отряд:\n%s" % "\n".join(lines)
 
 func _end_stats_text() -> String:
-	var allies_alive := _count_units(BattleUnit.UnitSide.ALLY, true)
-	var allies_total := _count_units(BattleUnit.UnitSide.ALLY, false)
-	var enemies_alive := _count_units(BattleUnit.UnitSide.ENEMY, true)
-	var enemies_total := _count_units(BattleUnit.UnitSide.ENEMY, false)
-	var enemies_defeated := enemies_total - enemies_alive
-	return "Статистика: время %s, союзники %d/%d, враги повержены %d/%d, урон %d, лечение %d." % [
-		_format_duration(_battle_elapsed_seconds),
-		allies_alive,
-		allies_total,
-		enemies_defeated,
-		enemies_total,
-		_sum_dictionary_int(_battle_damage_dealt),
-		_sum_dictionary_int(_battle_healing_done)
-	]
+	if _last_result != null:
+		return _last_result.stats_text()
+	return "Статистика: нет данных."
 
-func _count_units(side: int, alive_only: bool) -> int:
-	var count := 0
+func _end_lessons_text() -> String:
+	var lines: PackedStringArray = []
 	for unit in _units:
-		if unit.side != side:
+		if unit.side != BattleUnit.UnitSide.ALLY or unit.character_data == null:
 			continue
-		if alive_only and not unit.is_alive():
+		var lessons: Array = unit.character_data.combat_brain.get("lessons", [])
+		if lessons.is_empty():
 			continue
-		count += 1
+		lines.append("%s: %s" % [
+			_short_name(unit.display_name),
+			str(lessons[lessons.size() - 1])
+		])
+		if lines.size() >= 3:
+			break
+	if lines.is_empty():
+		return ""
+	return "Уроки:\n%s" % "\n".join(lines)
+
+func _track_memory_context(delta: float) -> void:
+	var leader = _get_unit_by_id(_leader_unit_id)
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or unit.character_data == null or not unit.is_alive():
+			continue
+		var char_id: String = unit.character_data.id
+		if _battlefield.is_cover(unit.grid_pos) or _battlefield.is_grass(unit.grid_pos):
+			_battle_cover_seconds[char_id] = float(_battle_cover_seconds.get(char_id, 0.0)) + delta
+		if _nearby_living_ally_count(unit, 4.0) == 0:
+			_battle_alone_seconds[char_id] = float(_battle_alone_seconds.get(char_id, 0.0)) + delta
+		if unit.visibility_stress >= 0.32:
+			_battle_low_visibility_seconds[char_id] = float(_battle_low_visibility_seconds.get(char_id, 0.0)) + delta * unit.visibility_stress
+		if leader != null and leader.is_alive() and leader != unit:
+			if Vector2(unit.grid_pos - leader.grid_pos).length() <= 5.0:
+				_battle_near_leader_seconds[char_id] = float(_battle_near_leader_seconds.get(char_id, 0.0)) + delta
+
+func _record_decision_usage(unit, intent_type: String) -> void:
+	if unit == null or unit.side != BattleUnit.UnitSide.ALLY:
+		return
+	var key := intent_type
+	if key == "":
+		key = "hold"
+	_battle_decision_usage[key] = int(_battle_decision_usage.get(key, 0)) + 1
+
+func _nearby_living_ally_count(unit, radius_tiles: float) -> int:
+	var count := 0
+	for other in _units:
+		if other == unit or other.side != unit.side or not other.is_alive():
+			continue
+		if Vector2(other.grid_pos - unit.grid_pos).length() <= radius_tiles:
+			count += 1
 	return count
-
-func _sum_dictionary_int(values: Dictionary) -> int:
-	var total := 0
-	for value in values.values():
-		total += int(value)
-	return total
-
-func _format_duration(seconds: float) -> String:
-	var total_seconds := maxi(0, int(round(seconds)))
-	var minutes := floori(float(total_seconds) / 60.0)
-	var seconds_part := total_seconds % 60
-	return "%d:%s" % [minutes, str(seconds_part).pad_zeros(2)]
 
 func _record_resolver_event(event: Dictionary) -> void:
 	var event_type := str(event.get("type", ""))
-	if event_type not in ["area", "damage", "heal", "buff"]:
+	if event_type not in ["ability_used", "area", "ambush", "damage", "heal", "buff", "status_damage", "step"]:
+		return
+	if event_type == "step":
+		_play_step_cue(int(event.get("tile", BattlefieldScript.TileType.FLOOR)))
+		return
+	if event_type == "status_damage":
+		var status_target = event.get("target", null)
+		var status_amount := int(event.get("amount", 0))
+		if status_target != null and status_amount > 0:
+			if status_target.character_data != null:
+				var target_char_id: String = status_target.character_data.id
+				_battle_damage_taken[target_char_id] = int(_battle_damage_taken.get(target_char_id, 0)) + status_amount
+			_add_visual_effect("ring", status_target.world_position, status_target.world_position, Color(0.62, 1.0, 0.32), 0.34, 16.0)
+			_add_floating_text(status_target.world_position + Vector2(0, -18), "-%d яд" % status_amount, Color(0.62, 1.0, 0.32), 1.0, Vector2(0, -30))
+			_play_audio_cue("hit")
 		return
 	var attacker = event.get("attacker", null)
 	var target = event.get("target", null)
 	if attacker == null:
 		return
 	var amount := int(event.get("amount", 0))
+	var friendly_fire := bool(event.get("friendly_fire", false))
 	var ability: AbilityData = event.get("ability", null)
+	if event_type == "ability_used":
+		if ability != null:
+			var ability_name := ability.name
+			_battle_ability_usage[ability_name] = int(_battle_ability_usage.get(ability_name, 0)) + 1
+		return
 	if event_type == "area":
 		var center: Vector2 = event.get("center", Vector2.ZERO)
 		var radius_pixels := maxf(18.0, float(event.get("radius_tiles", 0.0)) * _battlefield.tile_size())
@@ -657,13 +1400,40 @@ func _record_resolver_event(event: Dictionary) -> void:
 		var target_count := int(event.get("target_count", 0))
 		if target_count > 1:
 			_add_floating_text(center + Vector2(0, -18), "область x%d" % target_count, area_color, 0.9, Vector2(0, -22))
+		_play_audio_cue("spell")
 		return
-	if event_type == "damage" and amount > 0 and attacker.character_data != null:
+	if event_type == "ambush":
+		if target != null:
+			if attacker.character_data != null:
+				_add_character_action_score(attacker.character_data.id, "Засада", amount)
+			_focus_unit_id = attacker.unit_id if attacker.side == BattleUnit.UnitSide.ALLY else target.unit_id
+			_add_visual_effect("line", attacker.world_position, target.world_position, Color(0.72, 1.0, 0.36), 0.32, 0.0)
+			_add_visual_effect("ring", attacker.world_position, attacker.world_position, Color(0.72, 1.0, 0.36), 0.48, 24.0)
+			_add_floating_text(attacker.world_position + Vector2(0, -30), "засада", Color(0.72, 1.0, 0.36), 1.15, Vector2(0, -26))
+			_play_audio_cue("attack")
+		return
+	if event_type == "damage" and amount > 0 and attacker.character_data != null and not friendly_fire:
 		var char_id: String = attacker.character_data.id
 		_battle_damage_dealt[char_id] = int(_battle_damage_dealt.get(char_id, 0)) + amount
+		_add_character_action_score(char_id, _action_memory_label(ability, "Атака"), amount)
+		if target != null and _is_ranged_combat_event(attacker, target, ability):
+			_battle_ranged_damage[char_id] = int(_battle_ranged_damage.get(char_id, 0)) + amount
 	elif event_type == "heal" and amount > 0 and attacker.character_data != null:
 		var char_id: String = attacker.character_data.id
 		_battle_healing_done[char_id] = int(_battle_healing_done.get(char_id, 0)) + amount
+		_add_character_action_score(char_id, _action_memory_label(ability, "Лечение"), amount)
+	elif event_type == "buff" and attacker.character_data != null:
+		_add_character_action_score(attacker.character_data.id, _action_memory_label(ability, "Поддержка"), 1)
+	if target != null and event_type == "damage" and amount > 0 and target.character_data != null:
+		var target_char_id: String = target.character_data.id
+		_battle_damage_taken[target_char_id] = int(_battle_damage_taken.get(target_char_id, 0)) + amount
+		if attacker.side == BattleUnit.UnitSide.ENEMY:
+			var danger_weight := 1.0 + maxf(0.0, float(attacker.enemy_danger) - 1.0) * 0.35
+			var memory_amount := maxi(1, roundi(float(amount) * danger_weight))
+			_add_nested_score(_battle_dangerous_enemies, target_char_id, _enemy_memory_key(attacker), memory_amount)
+	elif target != null and event_type in ["heal", "buff"] and target.character_data != null and attacker.character_data != null and attacker != target:
+		var helped_char_id: String = target.character_data.id
+		_battle_help_received[helped_char_id] = int(_battle_help_received.get(helped_char_id, 0)) + maxi(1, amount)
 	if target != null and event_type == "damage" and amount > 0:
 		_focus_unit_id = attacker.unit_id if attacker.side == BattleUnit.UnitSide.ALLY else target.unit_id
 		var hit_color := Color(1.0, 0.34, 0.24) if target.side == BattleUnit.UnitSide.ALLY else Color(1.0, 0.86, 0.28)
@@ -672,6 +1442,7 @@ func _record_resolver_event(event: Dictionary) -> void:
 			_add_visual_effect("line", attacker.world_position, target.world_position, effect_color, 0.24, 0.0)
 		_add_visual_effect("ring", target.world_position, target.world_position, hit_color, 0.34, 17.0)
 		_add_floating_text(target.world_position + Vector2(0, -16), "-%d" % amount, hit_color, 1.0, Vector2(0, -34))
+		_play_audio_cue("hit")
 		if not target.is_alive():
 			_add_floating_text(target.world_position + Vector2(0, -32), "выведен", Color(0.95, 0.95, 0.95), 1.4, Vector2(0, -24))
 	elif target != null and event_type == "heal" and amount > 0:
@@ -679,29 +1450,51 @@ func _record_resolver_event(event: Dictionary) -> void:
 		_add_visual_effect("line", attacker.world_position, target.world_position, _ability_event_color(ability, event_type), 0.28, 0.0)
 		_add_visual_effect("ring", target.world_position, target.world_position, Color(0.35, 1.0, 0.55), 0.42, 19.0)
 		_add_floating_text(target.world_position + Vector2(0, -16), "+%d" % amount, Color(0.35, 1.0, 0.55), 1.0, Vector2(0, -30))
+		_play_audio_cue("heal")
 	elif target != null and event_type == "buff":
 		_focus_unit_id = target.unit_id
 		var label := ability.name if ability != null else "бафф"
 		_add_visual_effect("ring", target.world_position, target.world_position, _ability_event_color(ability, event_type), 0.5, 21.0)
 		_add_floating_text(target.world_position + Vector2(0, -18), label, Color(0.45, 0.82, 1.0), 1.05, Vector2(0, -24))
+		_play_audio_cue("buff")
 
-func _sync_roster_hp() -> void:
-	if GameState.roster == null:
+func _add_character_action_score(char_id: String, action_name: String, amount: int) -> void:
+	if char_id == "":
 		return
-	for unit in _units:
-		if unit.side != BattleUnit.UnitSide.ALLY or unit.character_data == null:
-			continue
-		GameState.roster.apply_hp_from_battle(unit.character_data.id, unit.battle_unit.current_hp)
+	_add_nested_score(_battle_successful_actions, char_id, action_name, amount)
 
-func _sync_active_raid_hp() -> void:
-	if GameState.active_raid == null:
+func _add_nested_score(store: Dictionary, owner_id: String, key: String, amount: int) -> void:
+	if owner_id == "" or key == "" or amount <= 0:
 		return
-	for unit in _units:
-		if unit.side != BattleUnit.UnitSide.ALLY or unit.character_data == null:
-			continue
-		var char_id: String = unit.character_data.id
-		if GameState.active_raid.character_states.has(char_id):
-			GameState.active_raid.character_states[char_id]["hp"] = unit.battle_unit.current_hp
+	var values: Dictionary = store.get(owner_id, {})
+	values[key] = int(values.get(key, 0)) + amount
+	store[owner_id] = values
+
+func _action_memory_label(ability: AbilityData, fallback: String) -> String:
+	if ability != null and ability.name != "":
+		return ability.name
+	return fallback
+
+func _enemy_memory_key(unit) -> String:
+	if unit == null:
+		return "неизвестный враг"
+	var label: String = unit.display_name.to_lower()
+	if label.begins_with("орк"):
+		return "орк"
+	if label.begins_with("тролль"):
+		return "тролль"
+	if label.begins_with("хранитель"):
+		return "хранитель"
+	if label.begins_with("гоблин"):
+		return "гоблин"
+	return unit.display_name
+
+func _is_ranged_combat_event(attacker, target, ability: AbilityData) -> bool:
+	if attacker == null or target == null:
+		return false
+	if Vector2(attacker.grid_pos - target.grid_pos).length() > 2.25:
+		return true
+	return ability != null and attacker.ability_range_tiles(ability) > 2.25
 
 func _update_combat_brains(victory: bool) -> void:
 	for unit in _units:
@@ -721,24 +1514,43 @@ func _update_combat_brains(victory: bool) -> void:
 			int(_battle_damage_dealt.get(char_id, 0)),
 			int(_battle_healing_done.get(char_id, 0))
 		)
+		unit.character_data.record_combat_memory({
+			"victory": victory,
+			"damage_dealt": int(_battle_damage_dealt.get(char_id, 0)),
+			"healing_done": int(_battle_healing_done.get(char_id, 0)),
+			"damage_taken": int(_battle_damage_taken.get(char_id, 0)),
+			"damage_taken_ratio": damage_taken_ratio,
+			"successful_actions": _battle_successful_actions.get(char_id, {}),
+			"dangerous_enemies": _battle_dangerous_enemies.get(char_id, {}),
+			"help_received": int(_battle_help_received.get(char_id, 0)),
+			"cover_seconds": float(_battle_cover_seconds.get(char_id, 0.0)),
+			"alone_seconds": float(_battle_alone_seconds.get(char_id, 0.0)),
+			"low_visibility_seconds": float(_battle_low_visibility_seconds.get(char_id, 0.0)),
+			"near_leader_seconds": float(_battle_near_leader_seconds.get(char_id, 0.0)),
+			"leader_alive": _leader_is_alive(),
+			"was_leader": unit.is_leader,
+			"ranged_damage": int(_battle_ranged_damage.get(char_id, 0)),
+			"hp_ratio": unit.hp_ratio()
+		})
+
+func _leader_is_alive() -> bool:
+	var leader = _get_unit_by_id(_leader_unit_id)
+	return leader != null and leader.is_alive()
 
 func _format_rewards(rewards: Dictionary) -> String:
-	var parts: PackedStringArray = []
-	var lootboxes := int(rewards.get("lootboxes", 0))
-	if lootboxes > 0:
-		parts.append("%d лутбоксов" % lootboxes)
-	var gold_amount := int(rewards.get("gold", 0))
-	if gold_amount > 0:
-		parts.append("%d золота" % gold_amount)
-	if parts.is_empty():
-		return "без награды"
-	return ", ".join(parts)
+	return _ui_formatter.format_rewards(rewards)
+
+func _mode_label() -> String:
+	return _ui_formatter.mode_label(_battle_context)
 
 func _draw() -> void:
 	_draw_background()
 	_draw_map()
 	_draw_tactical_overlays()
+	_draw_fog_of_war()
 	_draw_unit_vision()
+	if _debug_perception_overlay:
+		_draw_debug_perception()
 	_draw_paths()
 	_draw_visual_effects()
 	_draw_units()
@@ -780,6 +1592,43 @@ func _draw_tactical_overlays() -> void:
 			if cover_rank > 0:
 				var cover_color := Color(0.3, 1.0, 0.58, 0.56) if cover_rank >= 2 else Color(0.38, 0.82, 1.0, 0.42)
 				_draw_tile_brackets(rect.grow(-2.0), cover_color, 8.0, 2.0)
+			if _battlefield.is_height(pos):
+				draw_rect(rect.grow(-7.0), Color(1.0, 0.86, 0.28, 0.18))
+			elif _battlefield.is_trap(pos):
+				_draw_tile_brackets(rect.grow(-6.0), Color(1.0, 0.18, 0.12, 0.58), 6.0, 1.8)
+
+func _draw_fog_of_war() -> void:
+	if not _fog_of_war_enabled or _debug_perception_overlay:
+		return
+	for y in _battlefield.height:
+		for x in _battlefield.width:
+			var pos := Vector2i(x, y)
+			if bool(_player_visible_tiles.get(pos, false)):
+				continue
+			var rect := _tile_rect(pos)
+			if bool(_player_known_tiles.get(pos, false)):
+				draw_rect(rect, Color(0.02, 0.025, 0.032, 0.34))
+			else:
+				draw_rect(rect, Color(0.0, 0.0, 0.0, 0.68))
+	_draw_last_known_contacts()
+
+func _draw_last_known_contacts() -> void:
+	var font := get_theme_default_font()
+	var marked_positions: Dictionary = {}
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		for memory_value in unit.last_seen_enemies.values():
+			if not (memory_value is Dictionary):
+				continue
+			var memory: Dictionary = memory_value
+			var pos: Vector2i = memory.get("pos", unit.grid_pos)
+			if bool(_player_visible_tiles.get(pos, false)) or marked_positions.has(pos):
+				continue
+			marked_positions[pos] = true
+			var center: Vector2 = _battlefield.world_from_grid(pos, MAP_ORIGIN)
+			_draw_tile_brackets(_tile_rect(pos).grow(-8.0), Color(1.0, 0.72, 0.28, 0.58), 7.0, 1.6)
+			draw_string(font, center + Vector2(-9, 4), "?", HORIZONTAL_ALIGNMENT_CENTER, 18, 13, Color(1.0, 0.78, 0.34, 0.8))
 
 func _draw_unit_vision() -> void:
 	for unit in _units:
@@ -788,9 +1637,65 @@ func _draw_unit_vision() -> void:
 		var color := Color(0.2, 0.8, 1.0, 0.09) if unit.side == BattleUnit.UnitSide.ALLY else Color(1.0, 0.25, 0.18, 0.08)
 		draw_colored_polygon(_vision_polygon(unit), color)
 
+func _draw_debug_perception() -> void:
+	var font := get_theme_default_font()
+	for unit in _units:
+		if not unit.is_alive():
+			continue
+		var color := Color(0.35, 0.9, 1.0, 0.5) if unit.side == BattleUnit.UnitSide.ALLY else Color(1.0, 0.38, 0.28, 0.48)
+		var radius: float = unit.vision_radius_tiles * _battlefield.tile_size()
+		var facing_angle: float = unit.facing.angle()
+		var half_angle := deg_to_rad(unit.vision_angle_deg * 0.5)
+		draw_arc(unit.world_position, radius, facing_angle - half_angle, facing_angle + half_angle, 24, color, 1.3, true)
+		draw_line(unit.world_position, unit.world_position + Vector2(cos(facing_angle - half_angle), sin(facing_angle - half_angle)) * radius, Color(color.r, color.g, color.b, 0.28), 1.0)
+		draw_line(unit.world_position, unit.world_position + Vector2(cos(facing_angle + half_angle), sin(facing_angle + half_angle)) * radius, Color(color.r, color.g, color.b, 0.28), 1.0)
+		for enemy in unit.visible_enemies:
+			if enemy == null or not enemy.is_alive():
+				continue
+			draw_line(unit.world_position, enemy.world_position, Color(0.42, 1.0, 0.55, 0.72), 1.6)
+		for memory_value in unit.last_seen_enemies.values():
+			if not (memory_value is Dictionary):
+				continue
+			var memory: Dictionary = memory_value
+			var pos: Vector2i = memory.get("pos", unit.grid_pos)
+			var rect := _tile_rect(pos).grow(-8.0)
+			_draw_tile_brackets(rect, Color(1.0, 0.72, 0.28, 0.72), 6.0, 1.5)
+		if unit.heard_noise_timer > 0.0:
+			var noise_world: Vector2 = _battlefield.world_from_grid(unit.heard_noise_pos, MAP_ORIGIN)
+			var noise_color := Color(0.5, 0.85, 1.0, 0.56)
+			draw_arc(noise_world, 12.0 + unit.heard_noise_timer * 3.0, 0.0, TAU, 28, noise_color, 1.8, true)
+			draw_line(unit.world_position, noise_world, Color(noise_color.r, noise_color.g, noise_color.b, 0.28), 1.0)
+			draw_string(font, noise_world + Vector2(-18, -14), "noise", HORIZONTAL_ALIGNMENT_CENTER, 36, 9, noise_color)
+	_draw_debug_formations(font)
+
+func _draw_debug_formations(font: Font) -> void:
+	var marked_slots: Dictionary = {}
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		if unit.formation_slot == Vector2i.ZERO or not _battlefield.in_bounds(unit.formation_slot):
+			continue
+
+		var color := Color(0.64, 0.88, 1.0, 0.68)
+		if unit.is_leader:
+			color = Color(1.0, 0.82, 0.28, 0.72)
+		var slot_center: Vector2 = _battlefield.world_from_grid(unit.formation_slot, MAP_ORIGIN)
+		if unit.grid_pos != unit.formation_slot:
+			draw_line(unit.world_position, slot_center, Color(color.r, color.g, color.b, 0.26), 1.0)
+		if marked_slots.has(unit.formation_slot):
+			continue
+
+		marked_slots[unit.formation_slot] = true
+		var rect := _tile_rect(unit.formation_slot).grow(-10.0)
+		_draw_tile_brackets(rect, color, 7.0, 1.4)
+		var label := _formation_role_label(unit.formation_role).substr(0, 1).to_upper()
+		draw_string(font, rect.position + Vector2(6, 15), label, HORIZONTAL_ALIGNMENT_CENTER, rect.size.x - 12, 10, color)
+
 func _draw_paths() -> void:
 	for unit in _units:
 		if not unit.is_alive() or unit.path.is_empty():
+			continue
+		if not _unit_visible_to_player(unit):
 			continue
 		var color := Color(0.25, 0.8, 1.0, 0.6) if unit.side == BattleUnit.UnitSide.ALLY else Color(1.0, 0.3, 0.2, 0.55)
 		var previous: Vector2 = unit.world_position
@@ -830,8 +1735,11 @@ func _draw_visual_effects() -> void:
 
 func _draw_units() -> void:
 	var font := get_theme_default_font()
+	_draw_fallen_bodies(font)
 	for unit in _units:
 		if not unit.is_alive():
+			continue
+		if not _unit_visible_to_player(unit):
 			continue
 		_draw_movement_trail(unit)
 		_draw_unit_token(unit, font)
@@ -850,6 +1758,20 @@ func _draw_units() -> void:
 		draw_rect(Rect2(hp_origin, Vector2(hp_width * unit.hp_ratio(), 5)), hp_color)
 		draw_string(font, unit.world_position + Vector2(-28, 34), _short_name(unit.display_name), HORIZONTAL_ALIGNMENT_LEFT, 72, 11, Color(0.9, 0.9, 0.82))
 		draw_string(font, unit.world_position + Vector2(-34, 48), _intent_label(unit.intent), HORIZONTAL_ALIGNMENT_LEFT, 88, 10, Color(0.75, 0.85, 1.0))
+
+func _draw_fallen_bodies(font: Font) -> void:
+	for unit in _units:
+		if unit.is_alive() or unit.body_remove_timer <= 0.0:
+			continue
+		if not _unit_visible_to_player(unit):
+			continue
+		var alpha := clampf(unit.body_remove_timer / 8.0, 0.0, 0.72)
+		var center: Vector2 = unit.world_position
+		var color := Color(0.18, 0.16, 0.14, alpha)
+		draw_circle(center, 13.0, color)
+		draw_line(center + Vector2(-8, -8), center + Vector2(8, 8), Color(0.95, 0.78, 0.58, alpha), 2.0)
+		draw_line(center + Vector2(8, -8), center + Vector2(-8, 8), Color(0.95, 0.78, 0.58, alpha), 2.0)
+		draw_string(font, center + Vector2(-18, 28), _short_name(unit.display_name), HORIZONTAL_ALIGNMENT_LEFT, 56, 10, Color(0.78, 0.72, 0.66, alpha))
 
 func _draw_movement_trail(unit) -> void:
 	if not _unit_is_moving(unit):
@@ -887,6 +1809,11 @@ func _draw_unit_token(unit, font: Font) -> void:
 	if unit.fear >= 0.55:
 		var fear_alpha := clampf((unit.fear - 0.45) * 1.5, 0.25, 0.9)
 		draw_arc(center, 22.0, -PI * 0.5, PI * 1.5, 36, Color(0.72, 0.52, 1.0, fear_alpha), 2.0, true)
+
+	if unit.hidden:
+		draw_arc(center, 24.0, 0.0, TAU, 36, Color(0.45, 1.0, 0.64, 0.72), 1.6, true)
+	elif unit.stealth_reveal_timer > 0.0:
+		draw_arc(center, 23.0, 0.0, TAU, 36, Color(1.0, 0.82, 0.34, 0.42), 1.2, true)
 
 	if _unit_is_leader(unit):
 		var badge_center := center + Vector2(-15, -15)
@@ -963,6 +1890,8 @@ func _draw_legend() -> void:
 		["Вода медлит", _tile_color(BattlefieldScript.TileType.WATER)],
 		["Укрытие", _tile_color(BattlefieldScript.TileType.COVER)],
 		["Трава скрывает", _tile_color(BattlefieldScript.TileType.GRASS)],
+		["Темнота", _tile_color(BattlefieldScript.TileType.DARK)],
+		["Ловушка", _tile_color(BattlefieldScript.TileType.TRAP)],
 	]
 	for entry in entries:
 		draw_rect(Rect2(Vector2(x, y), Vector2(18, 18)), entry[1])
@@ -1050,104 +1979,27 @@ func _vision_polygon(unit) -> PackedVector2Array:
 	return points
 
 func _tile_color(tile: int) -> Color:
-	match tile:
-		BattlefieldScript.TileType.WALL:
-			return Color(0.12, 0.13, 0.15)
-		BattlefieldScript.TileType.WATER:
-			return Color(0.08, 0.18, 0.26)
-		BattlefieldScript.TileType.COVER:
-			return Color(0.26, 0.22, 0.16)
-		BattlefieldScript.TileType.DOOR:
-			return Color(0.25, 0.19, 0.08)
-		BattlefieldScript.TileType.GRASS:
-			return Color(0.10, 0.19, 0.12)
-		_:
-			return Color(0.16, 0.16, 0.16)
+	return _combat_renderer.tile_color(tile)
 
 func _unit_class_id(unit) -> String:
-	if unit.character_data == null:
+	if unit == null or unit.character_data == null:
 		return ""
-	return str(unit.character_data.character_class)
+	return str(unit.character_data.character_class).to_lower()
 
 func _unit_shape(unit) -> String:
-	if unit.side != BattleUnit.UnitSide.ALLY:
-		if unit.battle_unit != null and unit.battle_unit.max_hp >= 70:
-			return "square"
-		if unit.battle_unit != null and unit.battle_unit.max_hp >= 40:
-			return "diamond"
-		return "triangle"
-
-	match _unit_class_id(unit):
-		"defender", "guardian", "tank":
-			return "square"
-		"healer", "mage":
-			return "diamond"
-		"scout", "rogue", "assassin":
-			return "triangle"
-		_:
-			return "circle"
+	return _combat_renderer.unit_shape(unit)
 
 func _unit_icon(unit) -> String:
-	if unit.side != BattleUnit.UnitSide.ALLY:
-		if unit.battle_unit != null and unit.battle_unit.max_hp >= 70:
-			return "B"
-		if unit.battle_unit != null and unit.battle_unit.max_hp >= 40:
-			return "T"
-		if unit.display_name.begins_with("Орк"):
-			return "O"
-		return "G"
-
-	match _unit_class_id(unit):
-		"warrior":
-			return "W"
-		"healer":
-			return "+"
-		"mage":
-			return "M"
-		"scout":
-			return "S"
-		"defender", "guardian", "tank":
-			return "D"
-		_:
-			return "A"
+	return _combat_renderer.unit_icon(unit)
 
 func _unit_base_color(unit) -> Color:
-	if unit.side != BattleUnit.UnitSide.ALLY:
-		if unit.battle_unit != null and unit.battle_unit.max_hp >= 70:
-			return Color(0.56, 0.13, 0.16)
-		if unit.battle_unit != null and unit.battle_unit.max_hp >= 40:
-			return Color(0.72, 0.22, 0.16)
-		if unit.display_name.begins_with("Орк"):
-			return Color(0.84, 0.34, 0.16)
-		return Color(0.92, 0.2, 0.17)
-
-	match _unit_class_id(unit):
-		"warrior":
-			return Color(0.18, 0.58, 0.96)
-		"healer":
-			return Color(0.28, 0.78, 0.48)
-		"mage":
-			return Color(0.55, 0.46, 0.95)
-		"scout":
-			return Color(0.9, 0.62, 0.2)
-		"defender", "guardian", "tank":
-			return Color(0.34, 0.62, 0.74)
-		_:
-			return Color(0.24, 0.66, 0.94)
+	return _combat_renderer.unit_base_color(unit)
 
 func _unit_outline_color(unit) -> Color:
-	if unit.unit_id == _focus_unit_id:
-		return Color(1.0, 0.86, 0.28)
-	if unit.intent == "ability":
-		return Color(0.62, 0.9, 1.0)
-	if unit.intent == "attack":
-		return Color(1.0, 0.58, 0.24)
-	if unit.intent == "retreat":
-		return Color(0.72, 0.55, 1.0)
-	return Color(0.025, 0.03, 0.038)
+	return _combat_renderer.unit_outline_color(unit, _focus_unit_id)
 
 func _unit_is_leader(unit) -> bool:
-	return unit.side == BattleUnit.UnitSide.ALLY and unit.unit_id == "ally_0"
+	return unit.side == BattleUnit.UnitSide.ALLY and unit.is_leader
 
 func _ability_event_color(ability: AbilityData, event_type: String) -> Color:
 	match event_type:
@@ -1183,8 +2035,12 @@ func _intent_label(intent: String) -> String:
 			return "атака"
 		"chase":
 			return "преследует"
+		"flank":
+			return "обходит"
 		"retreat":
 			return "отступает"
+		"keep_distance":
+			return "дистанция"
 		"take_cover":
 			return "укрытие"
 		"follow":
@@ -1193,15 +2049,99 @@ func _intent_label(intent: String) -> String:
 			return "поиск"
 		"ambush":
 			return "засада"
+		"guard_ally":
+			return "прикрывает"
+		"support_backline":
+			return "задняя линия"
+		"rally_leader":
+			return "к лидеру"
+		"group_retreat":
+			return "общий отход"
+		"formation":
+			return "строй"
+		"press_attack":
+			return "напор"
+		"hold_line":
+			return "держит линию"
+		"safe_los":
+			return "позиция"
+		"panic_seek_ally":
+			return "к союзнику"
+		"scout_probe":
+			return "разведка"
+		"scout_flank":
+			return "фланг"
+		"break_contact":
+			return "разрыв"
+		"assassin_pickoff":
+			return "добивание"
+		"berserk_charge":
+			return "натиск"
+		"tactical_position":
+			return "тактика"
 		"hold":
 			return "ждёт"
 		_:
 			return intent
 
 func _short_name(value: String) -> String:
-	if value.length() <= 8:
-		return value
-	return value.substr(0, 8)
+	return _ui_formatter.short_name(value)
+
+func _intent_debug_suffix(intent: Dictionary) -> String:
+	if not _debug_perception_overlay:
+		return ""
+	var score := float(intent.get("score", 0.0))
+	var confidence := float(intent.get("confidence", 0.0)) * 100.0
+	var suffix := ", оценка %.2f, уверенность %.0f%%" % [score, confidence]
+	if bool(intent.get("hysteresis", false)):
+		suffix += ", держит план"
+	elif bool(intent.get("mistake", false)):
+		suffix += ", ошибка"
+	elif bool(intent.get("shifted", false)):
+		suffix += ", смена плана"
+	return suffix
+
+func _decision_debug_text(unit) -> String:
+	var lines: PackedStringArray = []
+	lines.append("уверенность %.0f%%, запас %.2f, ошибка %.0f%%" % [
+		unit.decision_confidence * 100.0,
+		unit.decision_margin,
+		unit.decision_mistake_chance * 100.0
+	])
+	lines.append("строй: %s, слот %s, %.1f клетки" % [
+		_formation_role_label(unit.formation_role),
+		str(unit.formation_slot),
+		unit.formation_distance
+	])
+	lines.append("видимость: стресс %.0f%%" % [unit.visibility_stress * 100.0])
+	var score_parts: PackedStringArray = []
+	for score_data in unit.decision_scores:
+		score_parts.append(_decision_score_label(score_data))
+		if score_parts.size() >= 4:
+			break
+	if not score_parts.is_empty():
+		lines.append("score: " + " / ".join(score_parts))
+	return "\n".join(lines)
+
+func _decision_score_label(score_data: Dictionary) -> String:
+	var intent_name := _intent_label(str(score_data.get("type", "")))
+	var ability_name := str(score_data.get("ability", ""))
+	if ability_name != "":
+		intent_name = ability_name
+	return "%s %.2f" % [intent_name, float(score_data.get("score", 0.0))]
+
+func _formation_role_label(role: String) -> String:
+	match role:
+		"front":
+			return "фронт"
+		"backline":
+			return "тыл"
+		"flank":
+			return "фланг"
+		"center":
+			return "центр"
+		_:
+			return "линия"
 
 func _refresh_focus_panel() -> void:
 	var unit = _get_focus_unit()
@@ -1209,15 +2149,28 @@ func _refresh_focus_panel() -> void:
 		_focus_label.text = "Фокус: нет активного героя"
 		return
 	var target_text := "цель: %s" % unit.target_name if unit.target_name != "" else "цель: нет"
+	var squad_target_text: String = "фокус отряда: %s" % unit.squad_focus_target_name if unit.squad_focus_target_name != "" else "фокус отряда: нет"
 	var action_text: String = unit.intent_ability_name if unit.intent == "ability" and unit.intent_ability_name != "" else _intent_label(unit.intent)
-	_focus_label.text = "Фокус: %s\n%s, HP %d/%d, страх %.0f%%\n%s\nпричина: %s" % [
+	var statuses: PackedStringArray = unit.status_list()
+	var status_text := "статусы: %s" % ", ".join(statuses) if not statuses.is_empty() else "статусы: нет"
+	var task_text := "задача: %s" % unit.current_task
+	var resource_text := "ресурсы: E%.0f S%.0f M%.0f" % [unit.energy, unit.stamina, unit.mana]
+	var debug_text := ""
+	if _debug_perception_overlay:
+		debug_text = "\n" + _decision_debug_text(unit)
+	_focus_label.text = "Фокус: %s\n%s, HP %d/%d, страх %.0f%%\n%s, %s\n%s, %s\n%s\nпричина: %s%s" % [
 		unit.display_name,
 		action_text,
 		unit.battle_unit.current_hp,
 		unit.battle_unit.max_hp,
 		unit.fear * 100.0,
 		target_text,
-		unit.intent_reason
+		squad_target_text,
+		task_text,
+		resource_text,
+		status_text,
+		unit.intent_reason,
+		debug_text
 	]
 
 func _refresh_unit_list() -> void:
@@ -1225,24 +2178,53 @@ func _refresh_unit_list() -> void:
 	var enemy_lines: PackedStringArray = []
 	for unit in _units:
 		var action_text: String = unit.intent_ability_name if unit.intent == "ability" and unit.intent_ability_name != "" else _intent_label(unit.intent)
+		var name_text: String = _short_name(unit.display_name)
+		if unit.is_leader:
+			name_text = "L " + name_text
 		var line := "%s %d/%d %s" % [
-			_short_name(unit.display_name),
+			name_text,
 			unit.battle_unit.current_hp,
 			unit.battle_unit.max_hp,
 			action_text
 		]
 		if unit.target_name != "":
 			line += " -> " + _short_name(unit.target_name)
+		var statuses: PackedStringArray = unit.status_list()
+		if not statuses.is_empty():
+			line += " [" + ",".join(statuses) + "]"
+		if _debug_perception_overlay and unit.decision_confidence > 0.0:
+			line += " %.0f%%" % (unit.decision_confidence * 100.0)
 		if not unit.is_alive():
 			line = "%s 0/%d выбыл" % [_short_name(unit.display_name), unit.battle_unit.max_hp]
 		if unit.side == BattleUnit.UnitSide.ALLY:
 			ally_lines.append(line)
 		else:
-			enemy_lines.append(line)
+			if _unit_visible_to_player(unit):
+				enemy_lines.append(line)
+	var hidden_contacts := _player_hidden_contact_count()
+	if hidden_contacts > 0:
+		enemy_lines.append("следы врага: %d" % hidden_contacts)
 	_unit_list_label.text = "Союзники\n%s\n\nВраги\n%s" % [
 		"\n".join(ally_lines),
 		"\n".join(enemy_lines)
 	]
+
+func _player_hidden_contact_count() -> int:
+	if not _fog_of_war_enabled or _debug_perception_overlay:
+		return 0
+	var marked_positions: Dictionary = {}
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or not unit.is_alive():
+			continue
+		for memory_value in unit.last_seen_enemies.values():
+			if not (memory_value is Dictionary):
+				continue
+			var memory: Dictionary = memory_value
+			var pos: Vector2i = memory.get("pos", unit.grid_pos)
+			if bool(_player_visible_tiles.get(pos, false)):
+				continue
+			marked_positions[pos] = true
+	return marked_positions.size()
 
 func _get_focus_unit():
 	for unit in _units:
@@ -1262,8 +2244,12 @@ func _intent_badge(intent: String) -> String:
 			return "A"
 		"chase":
 			return ">"
+		"flank":
+			return "/"
 		"retreat":
 			return "R"
+		"keep_distance":
+			return "D"
 		"take_cover":
 			return "C"
 		"follow":
@@ -1272,6 +2258,36 @@ func _intent_badge(intent: String) -> String:
 			return "S"
 		"ambush":
 			return "!"
+		"guard_ally":
+			return "G"
+		"support_backline":
+			return "B"
+		"rally_leader":
+			return "L"
+		"group_retreat":
+			return "R"
+		"formation":
+			return "P"
+		"press_attack":
+			return ">"
+		"hold_line":
+			return "H"
+		"safe_los":
+			return "V"
+		"panic_seek_ally":
+			return "+"
+		"scout_probe":
+			return "?"
+		"scout_flank":
+			return "/"
+		"break_contact":
+			return "B"
+		"assassin_pickoff":
+			return "X"
+		"berserk_charge":
+			return "!"
+		"tactical_position":
+			return "T"
 		_:
 			return "-"
 
@@ -1283,8 +2299,12 @@ func _intent_float_label(intent: String) -> String:
 			return "атака"
 		"chase":
 			return "вижу цель"
+		"flank":
+			return "обход"
 		"retreat":
 			return "страх"
+		"keep_distance":
+			return "дистанция"
 		"take_cover":
 			return "укрытие"
 		"follow":
@@ -1293,6 +2313,36 @@ func _intent_float_label(intent: String) -> String:
 			return "поиск"
 		"ambush":
 			return "засада"
+		"guard_ally":
+			return "прикрытие"
+		"support_backline":
+			return "за спины"
+		"rally_leader":
+			return "к лидеру"
+		"group_retreat":
+			return "отход"
+		"formation":
+			return "строй"
+		"press_attack":
+			return "напор"
+		"hold_line":
+			return "линия"
+		"safe_los":
+			return "позиция"
+		"panic_seek_ally":
+			return "к союзнику"
+		"scout_probe":
+			return "разведка"
+		"scout_flank":
+			return "фланг"
+		"break_contact":
+			return "разрыв"
+		"assassin_pickoff":
+			return "добить"
+		"berserk_charge":
+			return "натиск"
+		"tactical_position":
+			return "тактика"
 		_:
 			return ""
 
@@ -1304,8 +2354,12 @@ func _intent_color(intent: String) -> Color:
 			return Color(1.0, 0.48, 0.28)
 		"chase":
 			return Color(1.0, 0.78, 0.25)
+		"flank":
+			return Color(1.0, 0.66, 0.32)
 		"retreat":
 			return Color(0.72, 0.55, 1.0)
+		"keep_distance":
+			return Color(0.5, 0.9, 1.0)
 		"take_cover":
 			return Color(0.38, 0.74, 1.0)
 		"follow":
@@ -1314,6 +2368,36 @@ func _intent_color(intent: String) -> Color:
 			return Color(0.72, 0.82, 0.9)
 		"ambush":
 			return Color(0.75, 1.0, 0.36)
+		"guard_ally":
+			return Color(0.35, 0.95, 0.72)
+		"support_backline":
+			return Color(0.55, 0.82, 1.0)
+		"rally_leader":
+			return Color(1.0, 0.82, 0.28)
+		"group_retreat":
+			return Color(0.85, 0.62, 1.0)
+		"formation":
+			return Color(0.64, 0.88, 1.0)
+		"press_attack":
+			return Color(1.0, 0.62, 0.22)
+		"hold_line":
+			return Color(0.42, 0.92, 0.82)
+		"safe_los":
+			return Color(0.52, 0.82, 1.0)
+		"panic_seek_ally":
+			return Color(0.45, 1.0, 0.66)
+		"scout_probe":
+			return Color(0.92, 0.72, 0.34)
+		"scout_flank":
+			return Color(0.78, 1.0, 0.34)
+		"break_contact":
+			return Color(0.66, 0.78, 1.0)
+		"assassin_pickoff":
+			return Color(1.0, 0.46, 0.62)
+		"berserk_charge":
+			return Color(1.0, 0.34, 0.18)
+		"tactical_position":
+			return Color(0.72, 0.92, 1.0)
 		_:
 			return Color(0.85, 0.85, 0.85)
 
@@ -1321,13 +2405,18 @@ func _speed_label() -> String:
 	return "Скорость %.1fx" % _time_scale
 
 func _on_return_pressed() -> void:
+	if not _battle_finished and not _battle_context.is_demo():
+		_battle_finish_reason = "manual_retreat"
+		_battle_finish_detail = "Игрок приказал отряду отступить."
+		_finish_battle(false)
+		return
 	GameState.clear_pending_combat()
 	get_tree().change_scene_to_file(HUB_SCENE)
 
 func _on_end_return_pressed() -> void:
-	if _is_raid_combat:
+	if _battle_context.is_raid():
 		get_tree().change_scene_to_file(RAID_PROGRESS_SCENE)
-	elif _is_tower_elevation and _end_title.text == "Победа!":
+	elif _battle_context.is_tower() and _end_title.text == "Победа!":
 		get_tree().change_scene_to_file(TOWER_LOBBY_SCENE)
 	else:
 		get_tree().change_scene_to_file(HUB_SCENE)
@@ -1338,7 +2427,74 @@ func _on_pause_pressed() -> void:
 	_refresh_status()
 
 func _on_speed_pressed() -> void:
-	_speed_index = (_speed_index + 1) % SPEED_MODES.size()
-	_time_scale = float(SPEED_MODES[_speed_index])
+	_speed_index = (_speed_index + 1) % _combat_config.speed_modes.size()
+	_time_scale = float(_combat_config.speed_modes[_speed_index])
+	_fast_forward_to_end = false
 	_speed_btn.text = _speed_label()
 	_refresh_status()
+
+func _on_freeze_pressed() -> void:
+	_freeze_ai = not _freeze_ai
+	_freeze_btn.text = "AI off" if _freeze_ai else "AI"
+	_log_line("AI заморожен." if _freeze_ai else "AI снова принимает решения.")
+	_refresh_status()
+
+func _on_fast_finish_pressed() -> void:
+	_fast_forward_to_end = not _fast_forward_to_end
+	if _fast_forward_to_end:
+		_time_scale = 12.0
+		_fast_finish_btn.text = "1x"
+	else:
+		_time_scale = float(_combat_config.speed_modes[_speed_index])
+		_fast_finish_btn.text = "До конца"
+	_speed_btn.text = _speed_label()
+	_refresh_status()
+
+func _on_setup_pressed() -> void:
+	if not _battle_context.is_demo() or not _battle_finished:
+		_log_line("Сетап доступен после тренировочного боя.")
+		return
+	_debug_setup_index = (_debug_setup_index + 1) % 3
+	match _debug_setup_index:
+		1:
+			_battle_context.arena_id = "flooded_crossing"
+			_battle_context.enemy_plan = [{"type": "goblin_scout", "count": 2}, {"type": "orc", "count": 1}]
+		2:
+			_battle_context.arena_id = "generated_mixed"
+			_battle_context.enemy_plan = [{"type": "orc_defender", "count": 1}, {"type": "troll", "count": 1}]
+		_:
+			_battle_context.arena_id = "training_ruins"
+			_battle_context.enemy_plan = [{"type": "goblin", "count": 3}]
+	_restart_training_battle()
+
+func _on_debug_pressed() -> void:
+	_debug_perception_overlay = not _debug_perception_overlay
+	_debug_btn.text = "Debug on" if _debug_perception_overlay else "Debug"
+	queue_redraw()
+
+func _on_fog_pressed() -> void:
+	_fog_of_war_enabled = not _fog_of_war_enabled
+	_fog_btn.text = "Туман on" if _fog_of_war_enabled else "Туман off"
+	queue_redraw()
+
+func _on_repeat_training_pressed() -> void:
+	if not _battle_context.is_demo():
+		return
+	_restart_training_battle()
+
+func _restart_training_battle() -> void:
+	_battle_finished = false
+	_paused = false
+	_freeze_ai = false
+	_time_scale = _combat_config.default_time_scale
+	_speed_index = _combat_config.default_speed_index()
+	_pause_btn.disabled = false
+	_speed_btn.disabled = false
+	_pause_btn.text = "Пауза"
+	_freeze_btn.text = "AI"
+	_fast_finish_btn.text = "До конца"
+	_speed_btn.text = _speed_label()
+	_end_panel.visible = false
+	_setup_battle()
+	_refresh_status()
+	queue_redraw()

@@ -7,6 +7,7 @@ const MainFlowSmoke = preload("res://scripts/qa/scenarios/main_flow_smoke.gd")
 const CombatSmoke = preload("res://scripts/qa/scenarios/combat_smoke.gd")
 const TowerFlowSmoke = preload("res://scripts/qa/scenarios/tower_flow_smoke.gd")
 const RaidFlowSmoke = preload("res://scripts/qa/scenarios/raid_flow_smoke.gd")
+const BattlefieldSanity = preload("res://scripts/qa/scenarios/battlefield_sanity.gd")
 const RandomUiWalk = preload("res://scripts/qa/scenarios/random_ui_walk.gd")
 
 var _driver
@@ -89,9 +90,9 @@ func _parse_args() -> void:
 func _scenario_names() -> Array[String]:
 	match _scenario:
 		"smoke_all", "smoke":
-			return ["scene_smoke", "main_flow_smoke", "combat_smoke", "tower_flow_smoke", "raid_flow_smoke"]
+			return ["scene_smoke", "main_flow_smoke", "combat_smoke", "tower_flow_smoke", "raid_flow_smoke", "battlefield_sanity"]
 		"full":
-			return ["scene_smoke", "main_flow_smoke", "combat_smoke", "tower_flow_smoke", "raid_flow_smoke", "random_ui_walk"]
+			return ["scene_smoke", "main_flow_smoke", "combat_smoke", "tower_flow_smoke", "raid_flow_smoke", "battlefield_sanity", "random_ui_walk"]
 		_:
 			if _scenario.contains(","):
 				var names: Array[String] = []
@@ -112,6 +113,8 @@ func _create_scenario(scenario_name: String):
 			return TowerFlowSmoke.new()
 		"raid_flow", "raid_flow_smoke":
 			return RaidFlowSmoke.new()
+		"battlefield", "battlefield_sanity":
+			return BattlefieldSanity.new()
 		"random_ui", "random_ui_walk":
 			return RandomUiWalk.new()
 		_:

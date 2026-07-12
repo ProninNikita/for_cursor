@@ -1,5 +1,5 @@
 fc8a56933c4b1c8d796fdb8f7a9f9475
-::res://::1776539393
+::res://::1777959832
 CLAUDE.md::TextFile::-1::1776007914::0::1::::<><>::
 DESIGN.md::TextFile::-1::1775825315::0::1::::<><>::
 icon.svg::CompressedTexture2D::6658990731898266896::1775825315::1776030888::1::::<><>::
@@ -29,8 +29,8 @@ hub.tscn::PackedScene::-1::1775825315::0::1::::<><>::res://scripts/hub/hub.gd
 main.tscn::PackedScene::7874180431836241663::1775825315::0::1::::<><>::res://scripts/main/main.gd
 ::res://scenes/mansion/::1772441914
 mansion.tscn::PackedScene::-1::1775825315::0::1::::<><>::res://scripts/mansion/mansion.gd
-::res://scenes/menu/::1776102104
-main_menu.tscn::PackedScene::4052191289548845875::1776102104::0::1::::<><>::res://scripts/menu/main_menu.gd
+::res://scenes/menu/::1777934072
+main_menu.tscn::PackedScene::4052191289548845875::1777934072::0::1::::<><>::res://scripts/menu/main_menu.gd
 ::res://scenes/portal/::1772194338
 portal.tscn::PackedScene::-1::1775825315::0::1::::<><>::res://scripts/portal/portal.gd
 ::res://scenes/tower/::1776081264
@@ -54,11 +54,11 @@ combat.gd::GDScript::-1::1776102041::0::1::::<>Control<>::
 ability_data.gd::GDScript::-1::1776029312::0::1::::AbilityData<>RefCounted<>::
 character_data.gd::GDScript::-1::1775569218::0::1::::CharacterData<>Resource<>::
 character_generator.gd::GDScript::-1::1775825315::0::1::::CharacterGenerator<>RefCounted<>::
-raid_expedition.gd::GDScript::-1::1776081681::0::1::::RaidExpedition<>RefCounted<>::
+raid_expedition.gd::GDScript::-1::1777898368::0::1::::RaidExpedition<>RefCounted<>::
 roster.gd::GDScript::-1::1775569219::0::1::::Roster<>RefCounted<>::
 tower_elevation.gd::GDScript::-1::1776064017::0::1::::TowerElevation<>RefCounted<>::
 ::res://scripts/hub/::1776081780
-hub.gd::GDScript::-1::1776081780::0::1::::<>Control<>::
+hub.gd::GDScript::-1::1777898350::0::1::::<>Control<>::
 ::res://scripts/loot/::1772445989
 lootbox.gd::GDScript::-1::1775825315::0::1::::Lootbox<>RefCounted<>::
 ::res://scripts/main/::1772017372
@@ -71,8 +71,8 @@ main_menu.gd::GDScript::-1::1775825315::0::1::::<>Control<>::
 portal.gd::GDScript::-1::1775825315::0::1::::<>Control<>::
 ::res://scripts/tower/::1776104107
 elevation.gd::GDScript::-1::1776064475::0::1::::<>Control<>::
-raid_lobby.gd::GDScript::-1::1776076049::0::1::::<>Control<>::
-raid_progress.gd::GDScript::-1::1776104107::0::1::::<>Control<>::
+raid_lobby.gd::GDScript::-1::1777934183::0::1::::<>Control<>::
+raid_progress.gd::GDScript::-1::1777898368::0::1::::<>Control<>::
 tower_lobby.gd::GDScript::-1::1776081400::0::1::::<>Control<>::
 tower_squad.gd::GDScript::-1::1776064672::0::1::::<>Control<>::
 ::res://theme/::1772194078

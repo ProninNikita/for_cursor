@@ -3,6 +3,7 @@
     "1": {
       "name": "Первый этаж",
       "description": "Начало восхождения. Легкие противники.",
+      "arena_id": "training_ruins",
       "enemies": [
         { "type": "goblin", "count": 2 }
       ],
@@ -14,8 +15,10 @@
     "2": {
       "name": "Второй этаж",
       "description": "Гоблинов становится больше.",
+      "arena_id": "training_ruins",
       "enemies": [
-        { "type": "goblin", "count": 3 }
+        { "type": "goblin", "count": 2 },
+        { "type": "goblin_coward", "count": 1 }
       ],
       "reward": {
         "lootboxes": 1,
@@ -25,6 +28,7 @@
     "3": {
       "name": "Третий этаж",
       "description": "Появляются первые орки.",
+      "arena_id": "flooded_crossing",
       "enemies": [
         { "type": "goblin", "count": 2 },
         { "type": "orc", "count": 1 }
@@ -37,6 +41,7 @@
     "4": {
       "name": "Четвёртый этаж",
       "description": "Орки укрепляются.",
+      "arena_id": "flooded_crossing",
       "enemies": [
         { "type": "goblin", "count": 1 },
         { "type": "orc", "count": 2 }
@@ -49,9 +54,11 @@
     "5": {
       "name": "Пятый этаж",
       "description": "Первый серьёзный вызов.",
+      "arena_id": "broken_halls",
       "enemies": [
         { "type": "goblin", "count": 2 },
-        { "type": "orc", "count": 2 }
+        { "type": "orc", "count": 1 },
+        { "type": "orc_defender", "count": 1 }
       ],
       "reward": {
         "lootboxes": 2,
@@ -61,6 +68,7 @@
     "6": {
       "name": "Шестой этаж",
       "description": "Орки доминируют.",
+      "arena_id": "broken_halls",
       "enemies": [
         { "type": "orc", "count": 3 }
       ],
@@ -72,6 +80,7 @@
     "7": {
       "name": "Седьмой этаж",
       "description": "Появляются тролли.",
+      "arena_id": "broken_halls",
       "enemies": [
         { "type": "orc", "count": 2 },
         { "type": "troll", "count": 1 }
@@ -84,8 +93,10 @@
     "8": {
       "name": "Восьмой этаж",
       "description": "Смешанные отряды врагов.",
+      "arena_id": "flooded_crossing",
       "enemies": [
-        { "type": "goblin", "count": 2 },
+        { "type": "goblin_scout", "count": 1 },
+        { "type": "goblin", "count": 1 },
         { "type": "orc", "count": 1 },
         { "type": "troll", "count": 1 }
       ],
@@ -97,6 +108,7 @@
     "9": {
       "name": "Девятый этаж",
       "description": "Последнее испытание перед вершиной.",
+      "arena_id": "broken_halls",
       "enemies": [
         { "type": "orc", "count": 3 },
         { "type": "troll", "count": 1 }
@@ -109,6 +121,7 @@
     "10": {
       "name": "Десятый этаж",
       "description": "Вершина Возвышения. Босс ждёт.",
+      "arena_id": "broken_halls",
       "enemies": [
         { "type": "troll", "count": 2 },
         { "type": "boss", "count": 1 }
@@ -122,6 +135,7 @@
     "11": {
       "name": "Этаж 11 - За пределами",
       "description": "То, что выше вершин...",
+      "arena_id": "broken_halls",
       "enemies": [
         { "type": "boss", "count": 1 }
       ],

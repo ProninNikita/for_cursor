@@ -1,0 +1,190 @@
+{
+  "enemies": {
+    "goblin": {
+      "name": "Гоблин",
+      "numbered": true,
+      "stats": {"hp": 14, "atk": 3, "def": 1, "magic": 0, "initiative": 4},
+      "abilities": ["goblin_basic_attack", "goblin_poison_strike"],
+      "vision": {"radius_tiles": 5.2, "angle_deg": 130.0},
+      "morale": 0.58,
+      "stealth": 0.05,
+      "danger": 1.0,
+      "reward_weight": 1.0,
+      "ai": {
+        "aggression": 0.48,
+        "caution": 0.38,
+        "teamwork": 0.42,
+        "self_preserve": 0.42,
+        "focus_fire": 0.5,
+        "cover_usage": 0.28,
+        "skill_patience": 0.32
+      }
+    },
+    "goblin_coward": {
+      "name": "Гоблин-трус",
+      "numbered": true,
+      "stats": {"hp": 12, "atk": 2, "def": 1, "magic": 0, "initiative": 5},
+      "abilities": ["goblin_basic_attack"],
+      "vision": {"radius_tiles": 5.4, "angle_deg": 135.0},
+      "morale": 0.42,
+      "stealth": 0.08,
+      "danger": 0.8,
+      "reward_weight": 0.8,
+      "ai": {
+        "aggression": 0.24,
+        "caution": 0.62,
+        "teamwork": 0.5,
+        "self_preserve": 0.78,
+        "focus_fire": 0.36,
+        "cover_usage": 0.45,
+        "skill_patience": 0.28,
+        "pain_fear": 0.62,
+        "solitude_fear": 0.48,
+        "call_help": 0.85
+      }
+    },
+    "goblin_scout": {
+      "name": "Гоблин-разведчик",
+      "numbered": true,
+      "stats": {"hp": 13, "atk": 3, "def": 1, "magic": 0, "initiative": 7},
+      "abilities": ["goblin_basic_attack", "goblin_poison_strike"],
+      "vision": {"radius_tiles": 6.4, "angle_deg": 145.0},
+      "morale": 0.54,
+      "stealth": 0.32,
+      "danger": 1.1,
+      "reward_weight": 1.0,
+      "ai": {
+        "aggression": 0.42,
+        "caution": 0.58,
+        "teamwork": 0.36,
+        "self_preserve": 0.55,
+        "focus_fire": 0.55,
+        "cover_usage": 0.68,
+        "skill_patience": 0.48,
+        "solitude_fear": 0.2
+      }
+    },
+    "orc": {
+      "name": "Орк",
+      "numbered": true,
+      "stats": {"hp": 28, "atk": 6, "def": 3, "magic": 0, "initiative": 3},
+      "abilities": ["orc_heavy_swing", "goblin_basic_attack"],
+      "vision": {"radius_tiles": 5.6, "angle_deg": 125.0},
+      "morale": 0.68,
+      "stealth": 0.0,
+      "danger": 2.1,
+      "reward_weight": 2.0,
+      "ai": {
+        "aggression": 0.72,
+        "caution": 0.24,
+        "teamwork": 0.34,
+        "self_preserve": 0.36,
+        "focus_fire": 0.5,
+        "cover_usage": 0.18,
+        "skill_patience": 0.28,
+        "pain_fear": 0.2
+      }
+    },
+    "orc_defender": {
+      "name": "Орк-защитник",
+      "numbered": true,
+      "stats": {"hp": 34, "atk": 5, "def": 6, "magic": 0, "initiative": 2},
+      "abilities": ["orc_shield_breaker", "goblin_basic_attack"],
+      "vision": {"radius_tiles": 5.2, "angle_deg": 130.0},
+      "morale": 0.74,
+      "stealth": 0.0,
+      "danger": 2.4,
+      "reward_weight": 2.2,
+      "ai": {
+        "aggression": 0.48,
+        "caution": 0.52,
+        "teamwork": 0.58,
+        "self_preserve": 0.48,
+        "focus_fire": 0.38,
+        "cover_usage": 0.28,
+        "skill_patience": 0.42,
+        "surround_fear": 0.14
+      }
+    },
+    "troll": {
+      "name": "Тролль",
+      "numbered": true,
+      "stats": {"hp": 48, "atk": 8, "def": 5, "magic": 0, "initiative": 2},
+      "abilities": ["troll_crush", "goblin_basic_attack"],
+      "vision": {"radius_tiles": 4.8, "angle_deg": 120.0},
+      "morale": 0.82,
+      "stealth": 0.0,
+      "danger": 3.5,
+      "reward_weight": 3.0,
+      "ai": {
+        "aggression": 0.68,
+        "caution": 0.18,
+        "teamwork": 0.22,
+        "self_preserve": 0.28,
+        "focus_fire": 0.34,
+        "cover_usage": 0.12,
+        "skill_patience": 0.2,
+        "pain_fear": 0.12,
+        "strong_enemy_fear": 0.1
+      }
+    },
+    "boss": {
+      "name": "Хранитель",
+      "numbered": false,
+      "stats": {"hp": 86, "atk": 11, "def": 7, "magic": 4, "initiative": 4},
+      "abilities": ["guardian_smite", "troll_crush", "goblin_basic_attack"],
+      "vision": {"radius_tiles": 6.2, "angle_deg": 150.0},
+      "morale": 0.95,
+      "stealth": 0.0,
+      "danger": 6.0,
+      "reward_weight": 6.0,
+      "ai": {
+        "aggression": 0.72,
+        "caution": 0.42,
+        "teamwork": 0.36,
+        "self_preserve": 0.5,
+        "focus_fire": 0.62,
+        "cover_usage": 0.2,
+        "skill_patience": 0.58,
+        "pain_fear": 0.08,
+        "strong_enemy_fear": 0.05,
+        "surround_fear": 0.08
+      },
+      "phases": [
+        {
+          "hp_below": 0.65,
+          "name": "Гнев Хранителя",
+          "message": "Хранитель давит агрессивнее.",
+          "stat_modifiers": {"atk": 2, "def": 1},
+          "morale": 1.0,
+          "attack_cooldown_multiplier": 0.9,
+          "cooldown_reduction": 0.4,
+          "ai": {
+            "aggression": 0.84,
+            "focus_fire": 0.72,
+            "skill_patience": 0.68,
+            "pain_fear": 0.04
+          }
+        },
+        {
+          "hp_below": 0.35,
+          "name": "Последняя кара",
+          "message": "Хранитель игнорирует боль и ищет решающий удар.",
+          "stat_modifiers": {"atk": 3, "magic": 2},
+          "vision": {"radius_tiles": 7.0, "angle_deg": 165.0},
+          "morale": 1.0,
+          "attack_cooldown_multiplier": 0.82,
+          "cooldown_reduction": 0.9,
+          "ai": {
+            "aggression": 0.92,
+            "caution": 0.22,
+            "focus_fire": 0.82,
+            "skill_patience": 0.76,
+            "pain_fear": 0.02,
+            "surround_fear": 0.03
+          }
+        }
+      ]
+    }
+  }
+}

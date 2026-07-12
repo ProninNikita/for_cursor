@@ -15,6 +15,7 @@ var character_data: CharacterData
 var tie_breaker: int = 0
 var abilities: Array[AbilityData] = []
 var battle_state: BattleState = null
+var enemy_profile: Dictionary = {}
 
 func is_alive() -> bool:
 	return current_hp > 0
@@ -89,21 +90,18 @@ static func goblin(index: int, rng: RandomNumberGenerator) -> BattleUnit:
 	u._load_goblin_abilities()
 	return u
 
-func _load_abilities_from_character_data(cd: CharacterData):
+func load_abilities_by_ids(ability_ids: Array) -> void:
 	abilities.clear()
-	for ability_id in cd.ability_ids:
-		var ability = AbilityRegistry.get_ability(ability_id)
+	for ability_id in ability_ids:
+		var ability = AbilityRegistry.get_ability(str(ability_id))
 		if ability != null:
 			abilities.append(ability.clone())
 
+func _load_abilities_from_character_data(cd: CharacterData):
+	load_abilities_by_ids(cd.ability_ids)
+
 func _load_goblin_abilities():
-	abilities.clear()
-	var basic_attack = AbilityRegistry.get_ability("goblin_basic_attack")
-	if basic_attack != null:
-		abilities.append(basic_attack.clone())
-	var poison_strike = AbilityRegistry.get_ability("goblin_poison_strike")
-	if poison_strike != null:
-		abilities.append(poison_strike.clone())
+	load_abilities_by_ids(["goblin_basic_attack", "goblin_poison_strike"])
 
 func take_damage(amount: int) -> void:
 	current_hp = maxi(0, current_hp - amount)

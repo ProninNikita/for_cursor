@@ -24,7 +24,7 @@ func wait_frames(count: int = 1) -> void:
 		await tree.process_frame
 
 func wait_seconds(seconds: float) -> void:
-	await tree.create_timer(seconds).timeout
+	await tree.create_timer(seconds, true, false, true).timeout
 
 func load_scene(scene_path: String) -> Node:
 	var err := tree.change_scene_to_file(scene_path)

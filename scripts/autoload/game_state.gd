@@ -17,9 +17,12 @@ var is_tower_elevation: bool = false  ## Это бой в Возвышении?
 var tower_elevation: TowerElevation = null  ## Прогресс Возвышения
 var active_raid: RaidExpedition = null  ## Текущая вылазка (если есть)
 var completed_raids: Array[Dictionary] = []  ## История завершённых вылазок
+var combat_history: Array[Dictionary] = []  ## Последние итоги боёв для баланса
 
 ## Текущее событие вылазки (для боёв)
 var pending_raid_event: Dictionary = {}  ## Событие вылазки, которое требует боя
+
+const MAX_COMBAT_HISTORY := 50
 
 func _ready() -> void:
 	roster = Roster.new()
@@ -35,6 +38,21 @@ func begin_combat(squad: Array[CharacterData], encounter_id: String) -> void:
 func clear_pending_combat() -> void:
 	pending_combat_squad.clear()
 	pending_combat_encounter = ""
+
+func record_combat_result(record: Dictionary) -> void:
+	if record.is_empty():
+		return
+	combat_history.append(record.duplicate(true))
+	while combat_history.size() > MAX_COMBAT_HISTORY:
+		combat_history.remove_at(0)
+
+func latest_combat_result() -> Dictionary:
+	if combat_history.is_empty():
+		return {}
+	return combat_history[combat_history.size() - 1].duplicate(true)
+
+func clear_combat_history() -> void:
+	combat_history.clear()
 
 func apply_rewards(rewards: Dictionary) -> Dictionary:
 	var applied: Dictionary = {}
