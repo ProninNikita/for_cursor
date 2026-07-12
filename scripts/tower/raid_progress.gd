@@ -86,10 +86,16 @@ func _update_squad_list() -> void:
 		var state = _raid.character_states[hero_id]
 		var hp = state["hp"]
 		var max_hp = state["max_hp"]
+		var fatigue := float(state.get("fatigue", 0.0))
 
 		var row = HBoxContainer.new()
 		var name_label = Label.new()
-		name_label.text = "%s HP: %d/%d" % [hero.display_name, hp, max_hp]
+		name_label.text = "%s HP: %d/%d  усталость: %d%%" % [
+			hero.display_name,
+			hp,
+			max_hp,
+			int(round(fatigue * 100.0))
+		]
 		row.add_child(name_label)
 		squad_list.add_child(row)
 

@@ -16,10 +16,21 @@ var enemy_spawns: Array[Vector2i] = []
 var special_zones: Array[Dictionary] = []
 var arena_validation_errors: Array[String] = []
 var occupied_tiles: Dictionary = {}
+var destructible_hp: Dictionary = {}
+var detected_traps: Dictionary = {}
+var static_path_cache: Dictionary = {}
 var path_cache: Dictionary = {}
 var path_cache_hits: int = 0
 var path_cache_misses: int = 0
+var static_path_cache_hits: int = 0
+var static_path_cache_misses: int = 0
+var path_budget_per_tick: int = 0
+var path_queue_per_tick: int = 0
+var path_queries_this_tick: int = 0
+var path_budget_deferred: int = 0
+var path_request_queue: Array[Dictionary] = []
 var _occupancy_revision: int = 0
+var _occupancy_signature: String = ""
 
 func setup_test_arena() -> void:
 	if setup_arena("training_ruins"):
@@ -40,6 +51,8 @@ func setup_arena(requested_arena_id: String) -> bool:
 func setup_from_data(selected_id: String, arena_data: Dictionary) -> bool:
 	arena_validation_errors.clear()
 	occupied_tiles.clear()
+	destructible_hp.clear()
+	detected_traps.clear()
 	clear_path_cache()
 	special_zones.clear()
 	if arena_data.has("generator"):
@@ -91,19 +104,27 @@ func set_tile(pos: Vector2i, tile_type: int) -> void:
 	if not in_bounds(pos):
 		return
 	tiles[_index(pos)] = tile_type
+	if tile_type == TileType.DESTRUCTIBLE:
+		destructible_hp[pos] = int(destructible_hp.get(pos, 8))
+	else:
+		destructible_hp.erase(pos)
 
 func is_walkable(pos: Vector2i) -> bool:
 	var tile := get_tile(pos)
 	return tile not in [TileType.WALL, TileType.DEEP_WATER, TileType.DESTRUCTIBLE]
 
 func rebuild_occupancy(units: Array) -> void:
+	var next_signature := _make_occupancy_signature(units)
+	if next_signature == _occupancy_signature:
+		return
+	_occupancy_signature = next_signature
 	occupied_tiles.clear()
-	_occupancy_revision += 1
-	clear_path_cache()
 	for unit in units:
 		if unit == null or not unit.is_alive():
 			continue
-		set_occupied(unit.grid_pos, unit.unit_id)
+		if in_bounds(unit.grid_pos) and unit.unit_id != "":
+			occupied_tiles[unit.grid_pos] = unit.unit_id
+	_mark_occupancy_changed(false)
 
 func set_occupied(pos: Vector2i, occupant_id: String) -> void:
 	if not in_bounds(pos) or occupant_id == "":
@@ -111,8 +132,7 @@ func set_occupied(pos: Vector2i, occupant_id: String) -> void:
 	if str(occupied_tiles.get(pos, "")) == occupant_id:
 		return
 	occupied_tiles[pos] = occupant_id
-	_occupancy_revision += 1
-	clear_path_cache()
+	_mark_occupancy_changed()
 
 func clear_occupied(pos: Vector2i, occupant_id: String = "") -> void:
 	if not occupied_tiles.has(pos):
@@ -120,12 +140,20 @@ func clear_occupied(pos: Vector2i, occupant_id: String = "") -> void:
 	if occupant_id != "" and str(occupied_tiles.get(pos, "")) != occupant_id:
 		return
 	occupied_tiles.erase(pos)
-	_occupancy_revision += 1
-	clear_path_cache()
+	_mark_occupancy_changed()
 
 func move_occupant(from_pos: Vector2i, to_pos: Vector2i, occupant_id: String) -> void:
-	clear_occupied(from_pos, occupant_id)
-	set_occupied(to_pos, occupant_id)
+	if occupant_id == "" or from_pos == to_pos:
+		return
+	var changed := false
+	if occupied_tiles.has(from_pos) and str(occupied_tiles.get(from_pos, "")) == occupant_id:
+		occupied_tiles.erase(from_pos)
+		changed = true
+	if in_bounds(to_pos) and str(occupied_tiles.get(to_pos, "")) != occupant_id:
+		occupied_tiles[to_pos] = occupant_id
+		changed = true
+	if changed:
+		_mark_occupancy_changed()
 
 func reserve_occupied(pos: Vector2i, occupant_id: String) -> bool:
 	if not in_bounds(pos) or occupant_id == "":
@@ -189,11 +217,69 @@ func is_narrow(pos: Vector2i) -> bool:
 func is_destructible(pos: Vector2i) -> bool:
 	return get_tile(pos) == TileType.DESTRUCTIBLE
 
+func is_door(pos: Vector2i) -> bool:
+	return get_tile(pos) == TileType.DOOR
+
 func is_dark(pos: Vector2i) -> bool:
 	return get_tile(pos) == TileType.DARK
 
 func is_noisy(pos: Vector2i) -> bool:
 	return get_tile(pos) == TileType.NOISY
+
+func damage_destructible(pos: Vector2i, amount: int) -> bool:
+	if amount <= 0 or not is_destructible(pos):
+		return false
+	var hp := int(destructible_hp.get(pos, 8)) - amount
+	if hp > 0:
+		destructible_hp[pos] = hp
+		return false
+	set_tile(pos, TileType.FLOOR)
+	clear_path_cache()
+	return true
+
+func open_door(pos: Vector2i) -> bool:
+	if get_tile(pos) != TileType.DOOR:
+		return false
+	set_tile(pos, TileType.FLOOR)
+	clear_path_cache()
+	return true
+
+func close_door(pos: Vector2i) -> bool:
+	if not in_bounds(pos) or get_tile(pos) != TileType.FLOOR or is_occupied(pos):
+		return false
+	set_tile(pos, TileType.DOOR)
+	clear_path_cache()
+	return true
+
+func block_door(pos: Vector2i) -> bool:
+	if not in_bounds(pos) or is_occupied(pos):
+		return false
+	if get_tile(pos) not in [TileType.DOOR, TileType.FLOOR]:
+		return false
+	set_tile(pos, TileType.DESTRUCTIBLE)
+	destructible_hp[pos] = 10
+	clear_path_cache()
+	return true
+
+func mark_trap_detected(pos: Vector2i, side: int) -> bool:
+	if not is_trap(pos):
+		return false
+	var key := _trap_detection_key(pos, side)
+	if bool(detected_traps.get(key, false)):
+		return false
+	detected_traps[key] = true
+	return true
+
+func is_trap_detected(pos: Vector2i, side: int) -> bool:
+	return bool(detected_traps.get(_trap_detection_key(pos, side), false))
+
+func trap_trigger_chance(pos: Vector2i, side: int) -> float:
+	if not is_trap(pos):
+		return 0.0
+	return 0.28 if is_trap_detected(pos, side) else 0.86
+
+func _trap_detection_key(pos: Vector2i, side: int) -> String:
+	return "%d:%d,%d" % [side, pos.x, pos.y]
 
 func world_from_grid(pos: Vector2i, origin: Vector2 = Vector2.ZERO) -> Vector2:
 	return origin + Vector2(float(pos.x) + 0.5, float(pos.y) + 0.5) * TILE_SIZE
@@ -234,11 +320,23 @@ func find_path(
 	var path: Array[Vector2i] = []
 	if start == goal or not is_walkable(start) or not is_walkable(goal):
 		return path
-	var cache_key := _path_cache_key(start, goal, ignored_occupant_id, allow_occupied_goal)
-	if path_cache.has(cache_key):
-		path_cache_hits += 1
-		return path_cache[cache_key].duplicate()
-	path_cache_misses += 1
+	var use_static_cache := _use_static_path_cache(ignored_occupant_id, allow_occupied_goal)
+	var cache_key := _path_cache_key(start, goal, ignored_occupant_id, allow_occupied_goal, use_static_cache)
+	if use_static_cache:
+		if static_path_cache.has(cache_key):
+			static_path_cache_hits += 1
+			return static_path_cache[cache_key].duplicate()
+		static_path_cache_misses += 1
+	else:
+		if path_cache.has(cache_key):
+			path_cache_hits += 1
+			return path_cache[cache_key].duplicate()
+		path_cache_misses += 1
+
+	if _path_budget_exceeded():
+		path_budget_deferred += 1
+		_queue_path_request(start, goal, ignored_occupant_id, allow_occupied_goal)
+		return path
 
 	var open: Array[Vector2i] = [start]
 	var came_from: Dictionary = {}
@@ -249,7 +347,7 @@ func find_path(
 		var current: Vector2i = _lowest_score(open, f_score)
 		if current == goal:
 			path = _reconstruct_path(came_from, current)
-			_store_path_cache(cache_key, path)
+			_store_path_cache(cache_key, path, use_static_cache)
 			return path.duplicate()
 
 		open.erase(current)
@@ -266,19 +364,76 @@ func find_path(
 			f_score[neighbor] = tentative + _heuristic(neighbor, goal)
 			if not open.has(neighbor):
 				open.append(neighbor)
-	_store_path_cache(cache_key, path)
+	_store_path_cache(cache_key, path, use_static_cache)
 	return path
 
 func clear_path_cache() -> void:
 	path_cache.clear()
+	static_path_cache.clear()
+	path_request_queue.clear()
+
+func clear_dynamic_path_cache() -> void:
+	path_cache.clear()
+
+func _mark_occupancy_changed(invalidate_signature: bool = true) -> void:
+	_occupancy_revision += 1
+	if invalidate_signature:
+		_occupancy_signature = ""
+	clear_dynamic_path_cache()
+
+func _make_occupancy_signature(units: Array) -> String:
+	var parts: PackedStringArray = []
+	for unit in units:
+		if unit == null or not unit.is_alive():
+			continue
+		if unit.unit_id == "":
+			continue
+		parts.append("%s@%d,%d" % [unit.unit_id, unit.grid_pos.x, unit.grid_pos.y])
+	parts.sort()
+	return "|".join(parts)
 
 func path_cache_stats() -> Dictionary:
 	return {
-		"entries": path_cache.size(),
-		"hits": path_cache_hits,
-		"misses": path_cache_misses,
-		"revision": _occupancy_revision
+		"entries": path_cache.size() + static_path_cache.size(),
+		"dynamic_entries": path_cache.size(),
+		"static_entries": static_path_cache.size(),
+		"hits": path_cache_hits + static_path_cache_hits,
+		"misses": path_cache_misses + static_path_cache_misses,
+		"dynamic_hits": path_cache_hits,
+		"dynamic_misses": path_cache_misses,
+		"static_hits": static_path_cache_hits,
+		"static_misses": static_path_cache_misses,
+		"revision": _occupancy_revision,
+		"budget": path_budget_per_tick,
+		"queries_this_tick": path_queries_this_tick,
+		"deferred": path_budget_deferred,
+		"queue": path_request_queue.size()
 	}
+
+func begin_path_tick(budget: int = 0, queue_budget: int = 0) -> void:
+	path_budget_per_tick = maxi(0, budget)
+	path_queue_per_tick = maxi(0, queue_budget)
+	path_queries_this_tick = 0
+	if path_queue_per_tick > 0:
+		process_path_request_queue(path_queue_per_tick)
+
+func process_path_request_queue(max_requests: int) -> void:
+	var limit := maxi(0, max_requests)
+	if limit <= 0 or path_request_queue.is_empty():
+		return
+	var old_budget := path_budget_per_tick
+	path_budget_per_tick = 0
+	for _i in limit:
+		if path_request_queue.is_empty():
+			break
+		var request: Dictionary = path_request_queue.pop_front()
+		find_path(
+			request.get("start", Vector2i.ZERO),
+			request.get("goal", Vector2i.ZERO),
+			str(request.get("ignored_occupant_id", "")),
+			bool(request.get("allow_occupied_goal", true))
+		)
+	path_budget_per_tick = old_budget
 
 func find_nearest_cover(from_pos: Vector2i, threat_pos: Vector2i, max_radius: int = 7) -> Vector2i:
 	var best: Vector2i = from_pos
@@ -394,11 +549,14 @@ func _parse_special_zones(raw_zones: Array) -> Array[Dictionary]:
 func _apply_special_zones() -> void:
 	for zone in special_zones:
 		var tile_type := _tile_from_token(str(zone.get("tile", zone.get("type", "floor"))), {})
+		var override_doors := bool(zone.get("override_doors", false))
 		var points: Array[Vector2i] = _zone_points(zone)
 		for pos in points:
 			if not in_bounds(pos):
 				continue
 			if get_tile(pos) == TileType.WALL:
+				continue
+			if get_tile(pos) == TileType.DOOR and tile_type != TileType.DOOR and not override_doors:
 				continue
 			set_tile(pos, tile_type)
 
@@ -582,19 +740,44 @@ func _fail_arena_validation(selected_id: String, errors: Array[String]) -> bool:
 		push_warning("RT arena '%s' invalid: %s" % [selected_id, error])
 	return false
 
-func _path_cache_key(start: Vector2i, goal: Vector2i, ignored_occupant_id: String, allow_occupied_goal: bool) -> String:
-	return "%d:%s:%s:%s:%s" % [
-		_occupancy_revision,
+func _path_cache_key(start: Vector2i, goal: Vector2i, ignored_occupant_id: String, allow_occupied_goal: bool, static_cache: bool = false) -> String:
+	return "%s:%d:%s:%s:%s:%s" % [
+		"static" if static_cache else "dynamic",
+		0 if static_cache else _occupancy_revision,
 		str(start),
 		str(goal),
 		ignored_occupant_id,
 		"1" if allow_occupied_goal else "0"
 	]
 
-func _store_path_cache(cache_key: String, path: Array[Vector2i]) -> void:
+func _store_path_cache(cache_key: String, path: Array[Vector2i], static_cache: bool = false) -> void:
+	if static_cache:
+		if static_path_cache.size() > 520:
+			static_path_cache.clear()
+		static_path_cache[cache_key] = path.duplicate()
+		return
 	if path_cache.size() > 320:
 		path_cache.clear()
 	path_cache[cache_key] = path.duplicate()
+
+func _use_static_path_cache(ignored_occupant_id: String, allow_occupied_goal: bool) -> bool:
+	return occupied_tiles.is_empty() and ignored_occupant_id == "" and allow_occupied_goal
+
+func _path_budget_exceeded() -> bool:
+	if path_budget_per_tick <= 0:
+		return false
+	path_queries_this_tick += 1
+	return path_queries_this_tick > path_budget_per_tick
+
+func _queue_path_request(start: Vector2i, goal: Vector2i, ignored_occupant_id: String, allow_occupied_goal: bool) -> void:
+	if path_request_queue.size() > 240:
+		return
+	path_request_queue.append({
+		"start": start,
+		"goal": goal,
+		"ignored_occupant_id": ignored_occupant_id,
+		"allow_occupied_goal": allow_occupied_goal
+	})
 
 func _setup_fallback_arena() -> void:
 	arena_validation_errors.clear()

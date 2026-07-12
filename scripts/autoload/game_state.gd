@@ -10,7 +10,7 @@ var gold: int = 0  ## Общая валюта игрока
 ## Временные данные перед сценой боя (очищаются после боя)
 var pending_combat_squad: Array[CharacterData] = []
 var pending_combat_encounter: String = ""
-var pending_tower_floor: int = 1  ## Выбранный этаж для Возвышения
+var pending_tower_floor: int = 0  ## Выбранный этаж для Возвышения, 0 = не выбрано
 var is_tower_elevation: bool = false  ## Это бой в Возвышении?
 
 ## Прогресс Башни
@@ -18,11 +18,13 @@ var tower_elevation: TowerElevation = null  ## Прогресс Возвышен
 var active_raid: RaidExpedition = null  ## Текущая вылазка (если есть)
 var completed_raids: Array[Dictionary] = []  ## История завершённых вылазок
 var combat_history: Array[Dictionary] = []  ## Последние итоги боёв для баланса
+var fallen_heroes: Array[Dictionary] = []  ## Архив погибших героев для будущего зала славы
 
 ## Текущее событие вылазки (для боёв)
 var pending_raid_event: Dictionary = {}  ## Событие вылазки, которое требует боя
 
 const MAX_COMBAT_HISTORY := 50
+const MAX_FALLEN_HEROES := 200
 
 func _ready() -> void:
 	roster = Roster.new()
@@ -38,6 +40,7 @@ func begin_combat(squad: Array[CharacterData], encounter_id: String) -> void:
 func clear_pending_combat() -> void:
 	pending_combat_squad.clear()
 	pending_combat_encounter = ""
+	pending_tower_floor = 0
 
 func record_combat_result(record: Dictionary) -> void:
 	if record.is_empty():
@@ -53,6 +56,22 @@ func latest_combat_result() -> Dictionary:
 
 func clear_combat_history() -> void:
 	combat_history.clear()
+
+func record_fallen_hero(record: Dictionary) -> void:
+	if record.is_empty():
+		return
+	fallen_heroes.append(record.duplicate(true))
+	while fallen_heroes.size() > MAX_FALLEN_HEROES:
+		fallen_heroes.remove_at(0)
+
+func fallen_hero_count() -> int:
+	return fallen_heroes.size()
+
+func get_fallen_heroes() -> Array[Dictionary]:
+	return fallen_heroes.duplicate(true)
+
+func clear_fallen_heroes() -> void:
+	fallen_heroes.clear()
 
 func apply_rewards(rewards: Dictionary) -> Dictionary:
 	var applied: Dictionary = {}
@@ -71,6 +90,8 @@ func apply_rewards(rewards: Dictionary) -> Dictionary:
 
 ## Начинает бой в Башне (для Возвышения)
 func begin_tower_combat(squad: Array[CharacterData], floor_num: int) -> void:
+	pending_tower_floor = maxi(1, floor_num)
+	is_tower_elevation = true
 	begin_combat(squad, "tower_floor_" + str(floor_num))
 
 ## Начинает вылазку

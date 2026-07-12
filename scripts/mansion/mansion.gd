@@ -3,13 +3,17 @@ extends Control
 ## Особняк — список героев из ростра
 
 const HUB_SCENE = "res://scenes/hub/hub.tscn"
+const HALL_OF_FAME_SCENE = "res://scenes/mansion/hall_of_fame.tscn"
 
 @onready var back_btn: Button = $TopBar/BackBtn
+@onready var fallen_btn: Button = $TopBar/FallenBtn
 @onready var characters_list: VBoxContainer = $Scroll/CharactersList
 
 func _ready() -> void:
 	back_btn.set_meta("qa_id", "mansion.back")
+	fallen_btn.set_meta("qa_id", "mansion.fallen")
 	back_btn.pressed.connect(_on_back)
+	fallen_btn.pressed.connect(_on_fallen)
 	_refresh_list()
 
 func _refresh_list() -> void:
@@ -54,3 +58,6 @@ func _refresh_list() -> void:
 
 func _on_back() -> void:
 	get_tree().change_scene_to_file(HUB_SCENE)
+
+func _on_fallen() -> void:
+	get_tree().change_scene_to_file(HALL_OF_FAME_SCENE)

@@ -83,6 +83,11 @@ var last_known_enemy_id: String = ""
 var last_known_enemy_name: String = ""
 var last_known_enemy_pos: Vector2i = Vector2i.ZERO
 var recent_events: Array[Dictionary] = []
+var last_damage_source_name: String = ""
+var last_damage_ability_name: String = ""
+var last_damage_cause: String = ""
+var last_damage_source_side: int = -1
+var death_shock_emitted: bool = false
 var body_remove_timer: float = -1.0
 var enemy_ai_profile: Dictionary = {}
 var enemy_danger: float = 0.0
@@ -159,6 +164,11 @@ func setup_from_battle_unit(source: BattleUnit, id: String, spawn: Vector2i, ori
 	last_known_enemy_name = ""
 	last_known_enemy_pos = spawn
 	recent_events.clear()
+	last_damage_source_name = ""
+	last_damage_ability_name = ""
+	last_damage_cause = ""
+	last_damage_source_side = -1
+	death_shock_emitted = false
 	body_remove_timer = -1.0
 	enemy_ai_profile.clear()
 	enemy_danger = 0.0
@@ -288,7 +298,13 @@ func _tick_statuses(delta: float) -> Array[Dictionary]:
 			if float(payload["tick_timer"]) <= 0.0:
 				payload["tick_timer"] = 1.0
 				var damage := maxi(1, int(payload.get("damage", 1)))
-				take_damage(damage)
+				take_damage(
+					damage,
+					str(payload.get("source_name", "")),
+					str(payload.get("ability_name", "")),
+					str(payload.get("cause", "poison")),
+					int(payload.get("source_side", -1))
+				)
 				state_events.append({
 					"type": "status_damage",
 					"status": status_id,
@@ -429,9 +445,20 @@ func add_recent_event(event_type: String, label: String, amount: int = 0) -> voi
 	while recent_events.size() > RECENT_EVENT_LIMIT:
 		recent_events.remove_at(0)
 
-func take_damage(amount: int) -> void:
+func take_damage(
+	amount: int,
+	source_name: String = "",
+	ability_name: String = "",
+	cause: String = "damage",
+	source_side: int = -1
+) -> void:
 	if battle_unit == null:
 		return
+	if amount > 0:
+		last_damage_source_name = source_name
+		last_damage_ability_name = ability_name
+		last_damage_cause = cause
+		last_damage_source_side = source_side
 	battle_unit.take_damage(amount)
 	fear = clampf(fear + minf(0.35, float(amount) / float(maxi(1, battle_unit.max_hp))), 0.0, 1.0)
 	morale = clampf(morale - minf(0.22, float(amount) / float(maxi(1, battle_unit.max_hp)) * 0.5), 0.0, 1.0)

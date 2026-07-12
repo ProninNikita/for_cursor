@@ -220,18 +220,70 @@ func complete_combat_event(victory: bool) -> void:
 		for key in combat_reward:
 			pending_rewards[key] = pending_rewards.get(key, 0) + combat_reward[key]
 	else:
-		# Штраф за поражение - дополнительный урон отряду
-		var damage_percent = 15  # 15% урона всем при поражении
-		for char_id in character_states:
-			var state = character_states[char_id]
-			var damage_amount = int(state["max_hp"] * damage_percent / 100.0)
-			state["hp"] = maxi(0, state["hp"] - damage_amount)
-
-			# Проверка на смерть
-			if state["hp"] <= 0:
-				status = RaidStatus.FAILED
+		_apply_retreat_consequences()
 
 	pending_combat_event.clear()
+
+func _apply_retreat_consequences() -> void:
+	var penalty: Dictionary = pending_combat_event.get("retreat_penalty", {})
+	var lost_hours := int(penalty.get("lost_hours", 1))
+	if lost_hours > 0:
+		elapsed_hours = mini(duration_hours, elapsed_hours + lost_hours)
+	var reward_loss_percent := clampf(float(penalty.get("reward_loss_percent", 0.18)), 0.0, 0.9)
+	if reward_loss_percent > 0.0:
+		for key in pending_rewards.keys():
+			if pending_rewards[key] is int or pending_rewards[key] is float:
+				pending_rewards[key] = maxi(0, int(round(float(pending_rewards[key]) * (1.0 - reward_loss_percent))))
+
+	var damage_percent := float(penalty.get("damage_percent", 15.0))
+	var death_threshold := clampf(float(penalty.get("death_threshold", 0.16)), 0.0, 0.6)
+	var death_chance := clampf(float(penalty.get("death_chance", 0.08)), 0.0, 0.35)
+	events.append({
+		"type": "retreat_consequence",
+		"name": "Тяжёлый отход",
+		"description": "Отряд теряет время, часть добычи и получает ранения.",
+		"hour": elapsed_hours
+	})
+	for char_id in character_states:
+		var state = character_states[char_id]
+		var max_hp := maxi(1, int(state.get("max_hp", 1)))
+		var damage_amount := int(round(float(max_hp) * damage_percent / 100.0))
+		state["hp"] = maxi(0, int(state.get("hp", 0)) - damage_amount)
+		var hp_ratio := float(state["hp"]) / float(max_hp)
+		if state["hp"] > 0 and hp_ratio <= death_threshold and randf() < death_chance:
+			state["hp"] = 0
+			_record_retreat_death(str(char_id), "retreat")
+		if state["hp"] <= 0:
+			status = RaidStatus.FAILED
+
+func _record_retreat_death(char_id: String, cause: String) -> void:
+	for hero in squad:
+		if hero.id != char_id:
+			continue
+		GameState.record_fallen_hero({
+			"hero_id": hero.id,
+			"name": hero.display_name,
+			"class": hero.character_class,
+			"class_display": hero.character_class_display_name,
+			"stats": hero.stats.duplicate(true),
+			"level": int(hero.stats.get("level", 1)),
+			"battle": {
+				"victory": false,
+				"combat_type": "raid",
+				"encounter_id": str(pending_combat_event.get("id", pending_combat_event.get("name", "raid_retreat"))),
+				"floor": 0,
+				"floor_name": "",
+				"raid_event": pending_combat_event.duplicate(true),
+				"duration_seconds": 0.0,
+				"seed": "raid"
+			},
+			"cause": cause,
+			"killer": "Тяжёлый отход",
+			"killer_side": -1,
+			"ability": "",
+			"timestamp": Time.get_unix_time_from_system()
+		})
+		return
 
 ## Обновляет состояние героев в ростере после завершения
 func update_roster_states() -> void:

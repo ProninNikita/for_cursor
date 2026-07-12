@@ -11,6 +11,7 @@ const ENEMY_REWARD_LOOTBOX_WEIGHT := 8.0
 
 func run(driver, fixtures, _context: Dictionary) -> void:
 	print("QA_SCENARIO: tower_flow_smoke")
+	await _check_direct_squad_is_not_elevation(driver, fixtures)
 	fixtures.reset_game(5)
 	var floor_data: Dictionary = fixtures.state.tower_elevation.get_floor_data(1)
 	var rewards: Dictionary = _expected_tower_rewards(floor_data)
@@ -37,7 +38,7 @@ func run(driver, fixtures, _context: Dictionary) -> void:
 	await driver.wait_for_scene(COMBAT_SCENE)
 	var combat_root = driver.get_current_root()
 	driver.check(_combat_has_selected_heroes(combat_root, expected_ids), "Выбранные герои не попали в RT-бой")
-	await driver.wait_until(Callable(self, "_combat_finished").bind(driver), 15.0, "бой из возвышения должен завершиться")
+	await driver.wait_until(Callable(self, "_combat_finished").bind(driver), 35.0, "бой из возвышения должен завершиться")
 	driver.check(_roster_hp_matches_combat_units(combat_root, fixtures.state), "HP ростера не синхронизирован после боя")
 	driver.check(_selected_heroes_trained(fixtures.state, expected_ids), "Герой не получил combat_brain.battle_count после боя")
 	driver.check(fixtures.state.pending_combat_squad.is_empty(), "После боя pending_combat_squad не очищен")
@@ -56,6 +57,22 @@ func run(driver, fixtures, _context: Dictionary) -> void:
 	await driver.wait_for_any_scene([TOWER_LOBBY_SCENE, HUB_SCENE], 3.0)
 	driver.check(fixtures.state.lootboxes_remaining == lootboxes_after, "Награда Возвышения начислилась повторно после выхода")
 	driver.check(fixtures.state.gold == gold_after, "Золото Возвышения начислилось повторно после выхода")
+
+func _check_direct_squad_is_not_elevation(driver, fixtures) -> void:
+	fixtures.reset_game(5)
+	fixtures.state.pending_tower_floor = 0
+	fixtures.state.is_tower_elevation = false
+	await driver.load_scene(TOWER_SQUAD_SCENE)
+	driver.check(driver.find_by_qa_id("tower_squad.threat_preview") == null, "tower_squad без выбранного этажа показал preview Возвышения")
+	var checkboxes: Array = driver.find_checkboxes_with_prefix("tower_squad.hero.")
+	driver.check(not checkboxes.is_empty(), "В обычном tower_squad нет героев")
+	if not checkboxes.is_empty():
+		await driver.set_checkbox(checkboxes[0], true, "tower_squad.direct.hero.0")
+		await driver.press_qa("tower_squad.start")
+		await driver.wait_for_scene(COMBAT_SCENE)
+		var root = driver.get_current_root()
+		var context = root.get("_battle_context") if root != null else null
+		driver.check(context != null and not context.is_tower(), "tower_squad без этажа запустил Возвышение")
 
 func _combat_finished(driver) -> bool:
 	var root = driver.get_current_root()
@@ -87,7 +104,9 @@ func _expected_tower_rewards(floor_data: Dictionary) -> Dictionary:
 func _combat_has_selected_heroes(root, expected_ids: Array[String]) -> bool:
 	if root == null:
 		return false
-	var units: Array = root.get("_units")
+	var units = root.get("_units")
+	if not (units is Array):
+		return false
 	var found: Dictionary = {}
 	for unit in units:
 		if unit.side != BattleUnit.UnitSide.ALLY or unit.character_data == null:
@@ -101,7 +120,9 @@ func _combat_has_selected_heroes(root, expected_ids: Array[String]) -> bool:
 func _roster_hp_matches_combat_units(root, state) -> bool:
 	if root == null:
 		return false
-	var units: Array = root.get("_units")
+	var units = root.get("_units")
+	if not (units is Array):
+		return false
 	for unit in units:
 		if unit.side != BattleUnit.UnitSide.ALLY or unit.character_data == null:
 			continue

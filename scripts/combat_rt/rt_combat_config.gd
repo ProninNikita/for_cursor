@@ -8,6 +8,12 @@ var speed_modes: Array[float] = [0.5, 1.0, 2.0, 4.0]
 var deterministic_seed: bool = false
 var battle_seed: int = -1
 var damage_multiplier: float = 0.68
+var trap_damage_base: int = 2
+var poison_damage_multiplier: float = 1.0
+var friendly_fire_multiplier: float = 0.55
+var area_damage_multiplier: float = 1.0
+var path_budget_per_tick: int = 120
+var path_queue_per_tick: int = 18
 var target_min_seconds: float = 20.0
 var target_max_seconds: float = 60.0
 
@@ -72,6 +78,12 @@ func _apply_context_modifiers(context) -> void:
 	if context == null:
 		return
 	damage_multiplier = clampf(context.modifier_float("damage_taken_multiplier", damage_multiplier), 0.55, 1.35)
+	trap_damage_base = clampi(int(round(context.modifier_float("trap_damage", float(trap_damage_base)))), 1, 8)
+	poison_damage_multiplier = clampf(context.modifier_float("poison_damage_multiplier", poison_damage_multiplier), 0.45, 1.8)
+	friendly_fire_multiplier = clampf(context.modifier_float("friendly_fire_multiplier", friendly_fire_multiplier), 0.25, 0.9)
+	area_damage_multiplier = clampf(context.modifier_float("area_damage_multiplier", area_damage_multiplier), 0.55, 1.4)
+	path_budget_per_tick = clampi(int(round(context.modifier_float("path_budget_per_tick", float(path_budget_per_tick)))), 24, 420)
+	path_queue_per_tick = clampi(int(round(context.modifier_float("path_queue_per_tick", float(path_queue_per_tick)))), 0, 80)
 	decision_interval = clampf(context.modifier_float("decision_interval", decision_interval), 0.18, 0.75)
 	max_log_lines = clampi(int(context.modifier_float("max_log_lines", float(max_log_lines))), 8, 28)
 	target_min_seconds = maxf(8.0, context.modifier_float("target_min_seconds", target_min_seconds))

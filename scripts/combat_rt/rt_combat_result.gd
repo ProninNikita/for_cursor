@@ -1,12 +1,15 @@
 class_name RTCombatResult
 extends RefCounted
 
+const BattleResultDataScript = preload("res://scripts/combat_rt/rt_battle_result_data.gd")
+
 var victory: bool = false
 var combat_type: String = "demo"
 var seed_label: String = "random"
 var elapsed_seconds: float = 0.0
 var allies_alive: int = 0
 var allies_total: int = 0
+var allies_dead: int = 0
 var enemies_alive: int = 0
 var enemies_total: int = 0
 var enemies_defeated: int = 0
@@ -19,6 +22,11 @@ var enemy_total_danger: float = 0.0
 var enemy_defeated_danger: float = 0.0
 var enemy_reward_bonus: Dictionary = {}
 var ally_summaries: Array[Dictionary] = []
+var fallen_allies: Array[Dictionary] = []
+var finish_reason: String = ""
+var finish_detail: String = ""
+var timeline: Array[Dictionary] = []
+var max_tick_ms: float = 0.0
 
 func setup_from_battle(
 	victory_value: bool,
@@ -81,27 +89,7 @@ func summary_line() -> String:
 	]
 
 func to_balance_record() -> Dictionary:
-	return {
-		"timestamp": Time.get_unix_time_from_system(),
-		"combat_type": combat_type,
-		"seed": seed_label,
-		"victory": victory,
-		"elapsed_seconds": elapsed_seconds,
-		"allies_alive": allies_alive,
-		"allies_total": allies_total,
-		"enemies_alive": enemies_alive,
-		"enemies_total": enemies_total,
-		"enemies_defeated": enemies_defeated,
-		"damage_dealt": damage_dealt,
-		"healing_done": healing_done,
-		"ability_usage": ability_usage.duplicate(true),
-		"decision_usage": decision_usage.duplicate(true),
-		"applied_rewards": applied_rewards.duplicate(true),
-		"enemy_total_danger": enemy_total_danger,
-		"enemy_defeated_danger": enemy_defeated_danger,
-		"enemy_reward_bonus": enemy_reward_bonus.duplicate(true),
-		"allies": ally_summaries.duplicate(true)
-	}
+	return BattleResultDataScript.from_result(self).to_dictionary()
 
 func format_duration(seconds: float) -> String:
 	var total_seconds := maxi(0, int(round(seconds)))
@@ -109,26 +97,48 @@ func format_duration(seconds: float) -> String:
 	var seconds_part := total_seconds % 60
 	return "%d:%s" % [minutes, str(seconds_part).pad_zeros(2)]
 
+func replay_summary_text(limit: int = 8) -> String:
+	if timeline.is_empty():
+		return ""
+	var lines: PackedStringArray = []
+	var start_index := maxi(0, timeline.size() - limit)
+	for i in range(start_index, timeline.size()):
+		var entry: Dictionary = timeline[i]
+		lines.append("%s  %s" % [
+			format_duration(float(entry.get("time", 0.0))),
+			str(entry.get("text", ""))
+		])
+	return "Хронология:\n%s" % "\n".join(lines)
+
 func _collect_unit_counts(units: Array) -> void:
 	allies_alive = 0
 	allies_total = 0
+	allies_dead = 0
 	enemies_alive = 0
 	enemies_total = 0
 	enemies_defeated = 0
 	ally_summaries.clear()
+	fallen_allies.clear()
 
 	for unit in units:
 		if unit.side == BattleUnit.UnitSide.ALLY:
 			allies_total += 1
+			var summary := {
+				"name": unit.display_name,
+				"class": str(unit.character_data.character_class) if unit.character_data != null else "",
+				"hp": unit.battle_unit.current_hp,
+				"max_hp": unit.battle_unit.max_hp,
+				"alive": unit.is_alive(),
+				"cause": unit.last_damage_cause,
+				"killer": unit.last_damage_source_name,
+				"ability": unit.last_damage_ability_name
+			}
+			ally_summaries.append(summary)
 			if unit.is_alive():
 				allies_alive += 1
-				ally_summaries.append({
-					"name": unit.display_name,
-					"class": str(unit.character_data.character_class) if unit.character_data != null else "",
-					"hp": unit.battle_unit.current_hp,
-					"max_hp": unit.battle_unit.max_hp,
-					"alive": unit.is_alive()
-			})
+			else:
+				allies_dead += 1
+				fallen_allies.append(summary.duplicate(true))
 		else:
 			enemies_total += 1
 			if unit.is_alive():

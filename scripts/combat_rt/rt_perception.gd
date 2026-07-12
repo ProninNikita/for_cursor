@@ -13,6 +13,7 @@ func update(units: Array, battlefield) -> void:
 	for observer in units:
 		if not observer.is_alive():
 			continue
+		_detect_nearby_traps(observer, battlefield)
 		for target in units:
 			if target == observer or not target.is_alive() or target.side == observer.side:
 				continue
@@ -62,6 +63,12 @@ func can_see(observer, target, battlefield) -> bool:
 	var delta: Vector2 = Vector2(target.grid_pos - observer.grid_pos)
 	var distance: float = delta.length()
 	var vision_radius: float = observer.vision_radius_tiles
+	var vision_angle: float = observer.vision_angle_deg
+	if battlefield.is_height(observer.grid_pos):
+		vision_radius += 1.45
+		vision_angle += 12.0
+	if battlefield.is_height(target.grid_pos):
+		vision_radius += 0.55
 	if battlefield.is_dark(observer.grid_pos):
 		vision_radius *= 0.82
 	if battlefield.is_dark(target.grid_pos):
@@ -81,7 +88,7 @@ func can_see(observer, target, battlefield) -> bool:
 		forward = Vector2.RIGHT if observer.side == BattleUnit.UnitSide.ALLY else Vector2.LEFT
 	var direction: Vector2 = delta.normalized()
 	var angle: float = rad_to_deg(acos(clampf(forward.dot(direction), -1.0, 1.0)))
-	if angle > observer.vision_angle_deg * 0.5:
+	if angle > vision_angle * 0.5:
 		return false
 
 	if battlefield.is_grass(target.grid_pos) and distance > (3.0 - target.stealth_rating):
@@ -90,6 +97,26 @@ func can_see(observer, target, battlefield) -> bool:
 		return false
 
 	return battlefield.has_line_of_sight(observer.grid_pos, target.grid_pos)
+
+func _detect_nearby_traps(observer, battlefield) -> void:
+	if battlefield == null or not observer.is_alive():
+		return
+	var stat_bonus: float = float(observer.get_stat("initiative")) * 0.16 + observer.brain_value("caution") * 1.4
+	if observer.stealth_rating > 0.0:
+		stat_bonus += observer.stealth_rating * 1.2
+	var radius := clampi(int(round(2.0 + stat_bonus)), 2, 5)
+	if battlefield.is_height(observer.grid_pos):
+		radius += 1
+	for y in range(observer.grid_pos.y - radius, observer.grid_pos.y + radius + 1):
+		for x in range(observer.grid_pos.x - radius, observer.grid_pos.x + radius + 1):
+			var pos := Vector2i(x, y)
+			if not battlefield.is_trap(pos):
+				continue
+			if Vector2(pos - observer.grid_pos).length() > float(radius):
+				continue
+			if not battlefield.has_line_of_sight(observer.grid_pos, pos):
+				continue
+			battlefield.mark_trap_detected(pos, observer.side)
 
 func _update_hidden_state(unit, battlefield) -> void:
 	unit.hidden = false

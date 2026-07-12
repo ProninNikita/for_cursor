@@ -16,6 +16,11 @@ const PostBattleServiceScript = preload("res://scripts/combat_rt/rt_post_battle_
 const CombatControllerScript = preload("res://scripts/combat_rt/rt_combat_controller.gd")
 const CombatRendererScript = preload("res://scripts/combat_rt/rt_combat_renderer.gd")
 const CombatUIFormatterScript = preload("res://scripts/combat_rt/rt_combat_ui_formatter.gd")
+const CombatAudioServiceScript = preload("res://scripts/combat_rt/rt_combat_audio_service.gd")
+const CombatUnitFactoryScript = preload("res://scripts/combat_rt/rt_combat_unit_factory.gd")
+const CombatSessionScript = preload("res://scripts/combat_rt/rt_combat_session.gd")
+const CombatEventCollectorScript = preload("res://scripts/combat_rt/rt_combat_event_collector.gd")
+const CombatUIControllerScript = preload("res://scripts/combat_rt/rt_combat_ui_controller.gd")
 
 const MAP_ORIGIN := Vector2(38, 94)
 const ENEMY_ARCHETYPES_PATH := "res://data/rt_enemies.json"
@@ -28,6 +33,11 @@ var _post_battle_service = PostBattleServiceScript.new()
 var _combat_controller = CombatControllerScript.new()
 var _combat_renderer = CombatRendererScript.new()
 var _ui_formatter = CombatUIFormatterScript.new()
+var _audio_service = CombatAudioServiceScript.new()
+var _unit_factory = CombatUnitFactoryScript.new()
+var _session = CombatSessionScript.new()
+var _event_collector = CombatEventCollectorScript.new()
+var _ui_controller = CombatUIControllerScript.new()
 var _rng := RandomNumberGenerator.new()
 var _units: Array = []
 var _intents: Dictionary = {}
@@ -36,6 +46,7 @@ var _battle_finished := false
 var _paused := false
 var _freeze_ai := false
 var _fast_forward_to_end := false
+var _auto_pause_important := false
 var _time_scale := 0.5
 var _speed_index: int = 0
 var _log_lines: PackedStringArray = []
@@ -62,6 +73,8 @@ var _battle_low_visibility_seconds: Dictionary = {}
 var _battle_near_leader_seconds: Dictionary = {}
 var _battle_ranged_damage: Dictionary = {}
 var _battle_decision_usage: Dictionary = {}
+var _battle_timeline: Array[Dictionary] = []
+var _max_process_usec: int = 0
 var _enemy_archetypes: Dictionary = {}
 var _leader_unit_id: String = ""
 var _squad_style: String = "balanced"
@@ -72,6 +85,7 @@ var _pause_btn: Button
 var _speed_btn: Button
 var _freeze_btn: Button
 var _fast_finish_btn: Button
+var _auto_pause_btn: Button
 var _setup_btn: Button
 var _debug_btn: Button
 var _fog_btn: Button
@@ -80,10 +94,15 @@ var _focus_label: Label
 var _unit_list_label: RichTextLabel
 var _log_label: RichTextLabel
 var _bottom_label: Label
-var _audio_player: AudioStreamPlayer
 var _end_panel: PanelContainer
 var _end_title: Label
 var _end_detail: Label
+var _end_tabs: TabContainer
+var _end_heroes_detail: Label
+var _end_enemies_detail: Label
+var _end_rewards_detail: Label
+var _end_lessons_detail: Label
+var _end_deaths_detail: Label
 var _end_btn: Button
 var _repeat_btn: Button
 var _debug_perception_overlay := false
@@ -92,6 +111,7 @@ var _player_visible_tiles: Dictionary = {}
 var _player_known_tiles: Dictionary = {}
 
 func _ready() -> void:
+	mouse_filter = Control.MOUSE_FILTER_STOP
 	AbilityRegistry.initialize()
 	_capture_battle_context()
 	_setup_combat_config()
@@ -102,14 +122,18 @@ func _ready() -> void:
 	queue_redraw()
 
 func _process(delta: float) -> void:
+	var process_started_usec := Time.get_ticks_usec()
 	_update_floating_texts(delta)
 	_update_visual_effects(delta)
 	if _battle_finished or _paused:
 		queue_redraw()
+		_record_process_time(process_started_usec)
 		return
 
 	var scaled_delta := delta * _time_scale
 	_battle_elapsed_seconds += scaled_delta
+	_session.elapsed_seconds = _battle_elapsed_seconds
+	_battlefield.begin_path_tick(_combat_config.path_budget_per_tick, _combat_config.path_queue_per_tick)
 	_update_enemy_phases()
 	if not _freeze_ai:
 		_decision_timer -= scaled_delta
@@ -132,6 +156,31 @@ func _process(delta: float) -> void:
 	_update_player_knowledge()
 	_refresh_status()
 	queue_redraw()
+	_record_process_time(process_started_usec)
+
+func _gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseButton:
+		var mouse_event := event as InputEventMouseButton
+		if mouse_event.button_index != MOUSE_BUTTON_LEFT or not mouse_event.pressed:
+			return
+		var unit = _unit_at_screen_position(mouse_event.position)
+		if unit != null:
+			_focus_unit_id = unit.unit_id
+			_refresh_focus_panel()
+			queue_redraw()
+
+func _unit_at_screen_position(pos: Vector2):
+	var best = null
+	var best_distance := INF
+	for unit in _units:
+		if not unit.is_alive() or not _unit_visible_to_player(unit):
+			continue
+		var distance: float = unit.world_position.distance_to(pos)
+		if distance > 24.0 or distance >= best_distance:
+			continue
+		best = unit
+		best_distance = distance
+	return best
 
 func _create_ui() -> void:
 	var top_bar := HBoxContainer.new()
@@ -169,6 +218,12 @@ func _create_ui() -> void:
 	_fast_finish_btn.set_meta("qa_id", "combat_rt.fast_finish")
 	_fast_finish_btn.pressed.connect(_on_fast_finish_pressed)
 	top_bar.add_child(_fast_finish_btn)
+
+	_auto_pause_btn = Button.new()
+	_auto_pause_btn.text = "Автопауза off"
+	_auto_pause_btn.set_meta("qa_id", "combat_rt.auto_pause")
+	_auto_pause_btn.pressed.connect(_on_auto_pause_pressed)
+	top_bar.add_child(_auto_pause_btn)
 
 	_setup_btn = Button.new()
 	_setup_btn.text = "Сетап"
@@ -232,22 +287,15 @@ func _create_ui() -> void:
 	_create_end_panel()
 
 func _create_audio() -> void:
-	_audio_player = AudioStreamPlayer.new()
-	_audio_player.volume_db = -18.0
-	var stream := AudioStreamGenerator.new()
-	stream.mix_rate = 22050.0
-	stream.buffer_length = 0.12
-	_audio_player.stream = stream
-	add_child(_audio_player)
-	_audio_player.play()
+	_audio_service.setup(self)
 
 func _create_end_panel() -> void:
 	_end_panel = PanelContainer.new()
 	_end_panel.name = "EndPanel"
 	_end_panel.visible = false
 	_end_panel.z_index = 10
-	_end_panel.position = Vector2(344, 154)
-	_end_panel.size = Vector2(592, 350)
+	_end_panel.position = Vector2(304, 118)
+	_end_panel.size = Vector2(672, 468)
 	add_child(_end_panel)
 
 	var style := StyleBoxFlat.new()
@@ -286,14 +334,17 @@ func _create_end_panel() -> void:
 	divider.color = Color(0.45, 0.5, 0.6, 0.55)
 	box.add_child(divider)
 
-	_end_detail = Label.new()
-	_end_detail.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
-	_end_detail.vertical_alignment = VERTICAL_ALIGNMENT_TOP
-	_end_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_end_detail.add_theme_font_size_override("font_size", 14)
-	_end_detail.add_theme_color_override("font_color", Color(0.88, 0.9, 0.88))
-	_end_detail.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	box.add_child(_end_detail)
+	_end_tabs = TabContainer.new()
+	_end_tabs.custom_minimum_size = Vector2(0, 260)
+	_end_tabs.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	box.add_child(_end_tabs)
+
+	_end_detail = _make_end_tab("Итог")
+	_end_heroes_detail = _make_end_tab("Герои")
+	_end_enemies_detail = _make_end_tab("Враги")
+	_end_rewards_detail = _make_end_tab("Награды")
+	_end_lessons_detail = _make_end_tab("Уроки")
+	_end_deaths_detail = _make_end_tab("Смерти")
 
 	_end_btn = Button.new()
 	_end_btn.text = "Продолжить"
@@ -312,6 +363,29 @@ func _create_end_panel() -> void:
 	_repeat_btn.pressed.connect(_on_repeat_training_pressed)
 	box.add_child(_repeat_btn)
 
+func _make_end_tab(title: String) -> Label:
+	var margin := MarginContainer.new()
+	margin.name = title
+	margin.add_theme_constant_override("margin_left", 8)
+	margin.add_theme_constant_override("margin_top", 8)
+	margin.add_theme_constant_override("margin_right", 8)
+	margin.add_theme_constant_override("margin_bottom", 8)
+	_end_tabs.add_child(margin)
+	var scroll := ScrollContainer.new()
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	margin.add_child(scroll)
+	var label := Label.new()
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+	label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	label.add_theme_font_size_override("font_size", 14)
+	label.add_theme_color_override("font_color", Color(0.88, 0.9, 0.88))
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	scroll.add_child(label)
+	return label
+
 func _capture_battle_context() -> void:
 	_battle_context = CombatContextScript.new()
 	_battle_context.setup_from_game_state()
@@ -322,6 +396,10 @@ func _setup_combat_config() -> void:
 	_combat_config.apply_to_rng(_rng, "scene")
 	_combat_config.apply_to_rng(_resolver.rng, "resolver")
 	_resolver.damage_multiplier = _combat_config.damage_multiplier
+	_resolver.trap_damage_base = _combat_config.trap_damage_base
+	_resolver.poison_damage_multiplier = _combat_config.poison_damage_multiplier
+	_resolver.friendly_fire_multiplier = _combat_config.friendly_fire_multiplier
+	_resolver.area_damage_multiplier = _combat_config.area_damage_multiplier
 	_time_scale = _combat_config.default_time_scale
 	_speed_index = _combat_config.default_speed_index()
 
@@ -352,18 +430,20 @@ func _setup_battle() -> void:
 	_battle_near_leader_seconds.clear()
 	_battle_ranged_damage.clear()
 	_battle_decision_usage.clear()
+	_battle_timeline.clear()
+	_max_process_usec = 0
+	_event_collector.reset()
 	_leader_unit_id = ""
 	_squad_style = "balanced"
 	_fast_forward_to_end = false
+	_session.reset(_battle_context, _combat_config, _battlefield, _units, _intents)
 
 	var squad := _combat_squad_or_demo()
-	for i in squad.size():
-		var battle_unit := BattleUnit.from_hero(squad[i], _rng)
-		var spawn: Vector2i = _battlefield.ally_spawns[i % _battlefield.ally_spawns.size()]
-		var unit = UnitScript.new()
-		unit.setup_from_battle_unit(battle_unit, "ally_%d" % i, spawn, MAP_ORIGIN, _battlefield)
+	var ally_units: Array = _unit_factory.build_ally_units(squad, _battlefield, MAP_ORIGIN, _rng)
+	for i in ally_units.size():
+		var unit = ally_units[i]
 		_units.append(unit)
-		_battle_start_hp[squad[i].id] = battle_unit.current_hp
+		_battle_start_hp[squad[i].id] = unit.battle_unit.current_hp
 		_battle_damage_dealt[squad[i].id] = 0
 		_battle_healing_done[squad[i].id] = 0
 		_battle_damage_taken[squad[i].id] = 0
@@ -376,20 +456,16 @@ func _setup_battle() -> void:
 		_battle_near_leader_seconds[squad[i].id] = 0.0
 		_battle_ranged_damage[squad[i].id] = 0
 
-	var enemies := _build_enemy_units()
-	for i in enemies.size():
-		var enemy_unit: BattleUnit = enemies[i]
-		var spawn: Vector2i = _battlefield.enemy_spawns[i % _battlefield.enemy_spawns.size()]
-		var unit = UnitScript.new()
-		unit.setup_from_battle_unit(enemy_unit, "enemy_%d" % i, spawn, MAP_ORIGIN, _battlefield)
-		unit.apply_enemy_profile(enemy_unit.enemy_profile)
-		_units.append(unit)
+	var enemy_units: Array = _unit_factory.build_enemy_units(_enemy_plan_for_context(), _enemy_archetypes, _battle_context, _battlefield, MAP_ORIGIN, _rng)
+	_units.append_array(enemy_units)
 
 	_apply_context_modifiers_to_units()
 	_assign_squad_leader_and_style()
 	_log_line("Бой начался: юниты действуют одновременно.")
+	_record_timeline("start", "Бой начался", 2)
 	_log_line(_battle_context.threat_text())
 	_play_audio_cue("battle_start")
+	_audio_service.play_music("training" if _battle_context.is_demo() else ("tower" if _battle_context.is_tower() else "raid"))
 	_battlefield.rebuild_occupancy(_units)
 	if not _units.is_empty():
 		_focus_unit_id = _units[0].unit_id
@@ -647,15 +723,16 @@ func _squad_style_label(style_id: String) -> String:
 
 func _combat_squad_or_demo() -> Array[CharacterData]:
 	var squad: Array[CharacterData] = []
+	var squad_limit := clampi(int(round(_battle_context.modifier_float("max_squad_size", float(Roster.MAX_SQUAD_SIZE)))), 1, 24)
 	if not GameState.pending_combat_squad.is_empty():
 		for cd in GameState.pending_combat_squad:
-			if squad.size() >= Roster.MAX_SQUAD_SIZE:
+			if squad.size() >= squad_limit:
 				break
 			cd.ensure_combat_brain()
 			squad.append(cd)
 	elif GameState.roster != null and GameState.roster.get_character_count() > 0:
 		for cd in GameState.roster.get_characters():
-			if squad.size() >= Roster.MAX_SQUAD_SIZE:
+			if squad.size() >= squad_limit:
 				break
 			cd.ensure_combat_brain()
 			squad.append(cd)
@@ -694,21 +771,6 @@ func _make_demo_hero(id: String, hero_name: String, class_id: String, personalit
 	hero.initialize_combat_brain()
 	return hero
 
-func _build_enemy_units() -> Array[BattleUnit]:
-	var enemies: Array[BattleUnit] = []
-	var enemy_plan: Array = _enemy_plan_for_context()
-	var index := 0
-	for entry in enemy_plan:
-		var enemy_type := str(entry.get("type", "goblin"))
-		var count := int(entry.get("count", 1))
-		for _i in count:
-			enemies.append(_make_enemy_unit(enemy_type, index, entry))
-			index += 1
-	if enemies.is_empty():
-		for i in 3:
-			enemies.append(_make_enemy_unit("goblin", i, {}))
-	return enemies
-
 func _enemy_plan_for_context() -> Array:
 	return _battle_context.enemy_plan.duplicate(true)
 
@@ -725,66 +787,6 @@ func _load_enemy_archetypes() -> void:
 		return
 	var parsed_data: Dictionary = data
 	_enemy_archetypes = parsed_data.get("enemies", {})
-
-func _make_enemy_unit(enemy_type: String, index: int, plan_entry: Dictionary) -> BattleUnit:
-	var archetype := _enemy_archetype(enemy_type)
-	var stats: Dictionary = archetype.get("stats", {})
-	var scale: float = _enemy_scale_for_plan(plan_entry)
-	var stat_scale: float = 1.0 + (scale - 1.0) * 0.55
-
-	var unit := BattleUnit.new()
-	unit.side = BattleUnit.UnitSide.ENEMY
-	unit.character_data = null
-	unit.display_name = _enemy_display_name(archetype, index)
-	unit.max_hp = maxi(1, roundi(float(stats.get("hp", 14)) * scale))
-	unit.current_hp = unit.max_hp
-	unit.atk = maxi(1, roundi(float(stats.get("atk", 3)) * stat_scale))
-	unit.def = maxi(0, roundi(float(stats.get("def", 1)) * stat_scale))
-	unit.magic = maxi(0, roundi(float(stats.get("magic", 0)) * stat_scale))
-	unit.initiative = maxi(1, roundi(float(stats.get("initiative", 4)) * stat_scale))
-	unit.tie_breaker = _rng.randi()
-	unit.battle_state = BattleState.new()
-	unit.enemy_profile = _enemy_profile_from_archetype(archetype)
-	var ability_ids: Array = archetype.get("abilities", ["goblin_basic_attack"])
-	unit.load_abilities_by_ids(ability_ids)
-	return unit
-
-func _enemy_archetype(enemy_type: String) -> Dictionary:
-	if _enemy_archetypes.has(enemy_type):
-		var archetype: Dictionary = _enemy_archetypes[enemy_type]
-		return archetype
-	push_warning("RT enemy archetype not found: " + enemy_type)
-	return _enemy_archetypes.get("goblin", {
-		"name": "Гоблин",
-		"numbered": true,
-		"stats": {"hp": 14, "atk": 3, "def": 1, "magic": 0, "initiative": 4},
-		"abilities": ["goblin_basic_attack"],
-		"vision": {"radius_tiles": 5.2, "angle_deg": 130.0},
-		"morale": 0.58,
-		"ai": {}
-	})
-
-func _enemy_scale_for_plan(plan_entry: Dictionary) -> float:
-	var scale: float = float(plan_entry.get("scale", 1.0))
-	scale *= _battle_context.modifier_float("enemy_scale", 1.0)
-	return maxf(0.35, scale)
-
-func _enemy_display_name(archetype: Dictionary, index: int) -> String:
-	var base_name := str(archetype.get("name", "Гоблин"))
-	if not bool(archetype.get("numbered", true)):
-		return base_name
-	return "%s %d" % [base_name, index + 1]
-
-func _enemy_profile_from_archetype(archetype: Dictionary) -> Dictionary:
-	return {
-		"vision": archetype.get("vision", {}).duplicate(true),
-		"morale": float(archetype.get("morale", 0.62)),
-		"stealth": float(archetype.get("stealth", 0.0)),
-		"ai": archetype.get("ai", {}).duplicate(true),
-		"danger": float(archetype.get("danger", 1.0)),
-		"reward_weight": float(archetype.get("reward_weight", 1.0)),
-		"phases": archetype.get("phases", []).duplicate(true)
-	}
 
 func _apply_context_modifiers_to_units() -> void:
 	var ally_fear := _battle_context.modifier_float("initial_ally_fear", 0.0)
@@ -1041,6 +1043,14 @@ func _log_line(message: String) -> void:
 	if _bottom_label != null:
 		_bottom_label.text = "Последнее событие: " + message
 
+func _record_timeline(kind: String, text: String, importance: int = 1) -> void:
+	_event_collector.record_timeline(_battle_elapsed_seconds, kind, text, importance, 24)
+	_battle_timeline = _event_collector.timeline.duplicate(true)
+
+func _record_process_time(started_usec: int) -> void:
+	_event_collector.record_process_time(started_usec)
+	_max_process_usec = _event_collector.max_process_usec
+
 func _add_floating_text(world_position: Vector2, text: String, color: Color, ttl: float = 1.0, velocity: Vector2 = Vector2(0, -28)) -> void:
 	if text == "":
 		return
@@ -1095,73 +1105,25 @@ func _play_step_cue(tile_type: int) -> void:
 				_play_audio_cue("step")
 
 func _play_audio_cue(kind: String) -> void:
-	if _audio_player == null:
-		return
-	var playback := _audio_player.get_stream_playback() as AudioStreamGeneratorPlayback
-	if playback == null:
-		return
-	var frequency := 280.0
-	var duration := 0.045
-	var volume := 0.055
-	match kind:
-		"battle_start":
-			frequency = 220.0
-			duration = 0.11
-			volume = 0.035
-		"attack":
-			frequency = 360.0
-			duration = 0.035
-		"hit":
-			frequency = 130.0
-			duration = 0.05
-			volume = 0.075
-		"spell":
-			frequency = 520.0
-			duration = 0.075
-			volume = 0.05
-		"heal":
-			frequency = 660.0
-			duration = 0.08
-			volume = 0.042
-		"buff":
-			frequency = 470.0
-			duration = 0.06
-			volume = 0.04
-		"step_water":
-			frequency = 95.0
-			duration = 0.035
-			volume = 0.032
-		"step_door":
-			frequency = 180.0
-			duration = 0.032
-			volume = 0.04
-		"victory":
-			frequency = 740.0
-			duration = 0.14
-			volume = 0.055
-		"defeat":
-			frequency = 105.0
-			duration = 0.16
-			volume = 0.06
-		_:
-			pass
-	var mix_rate := 22050.0
-	var frame_count := int(mix_rate * duration)
-	for i in range(frame_count):
-		var t := float(i) / mix_rate
-		var fade := 1.0 - float(i) / float(maxi(1, frame_count))
-		var sample := sin(t * frequency * TAU) * volume * fade
-		playback.push_frame(Vector2(sample, sample))
+	_audio_service.play(kind)
 
 func _finish_battle(victory: bool) -> void:
 	if _battle_finished:
 		return
 	_battle_finished = true
+	_session.mark_finished(_battle_finish_reason, _battle_finish_detail)
 	_pause_btn.disabled = true
 	_speed_btn.disabled = true
 	_update_combat_brains(victory)
 
-	var applied_rewards: Dictionary = _post_battle_service.apply(victory, _battle_context, _units)
+	var applied_rewards: Dictionary = _post_battle_service.apply(
+		victory,
+		_battle_context,
+		_units,
+		_battle_elapsed_seconds,
+		_combat_config.seed_label()
+	)
+	_record_timeline("finish", _battle_finish_detail if _battle_finish_detail != "" else ("Победа" if victory else "Поражение"), 3)
 	_last_result = _build_combat_result(victory, applied_rewards)
 	GameState.record_combat_result(_last_result.to_balance_record())
 	_log_line(_last_result.summary_line())
@@ -1183,6 +1145,10 @@ func _build_combat_result(victory: bool, applied_rewards: Dictionary):
 		applied_rewards,
 		_battle_elapsed_seconds
 	)
+	result.finish_reason = _battle_finish_reason
+	result.finish_detail = _battle_finish_detail
+	result.timeline = _event_collector.timeline.duplicate(true)
+	result.max_tick_ms = _event_collector.max_tick_ms()
 	return result
 
 func _show_end_panel(victory: bool, applied_rewards: Dictionary) -> void:
@@ -1202,33 +1168,10 @@ func _show_end_panel(victory: bool, applied_rewards: Dictionary) -> void:
 		_end_btn.text = "В город"
 		if _battle_context.is_raid():
 			_end_btn.text = "К вылазке"
-	_end_detail.text = _end_result_text(victory, applied_rewards)
+	_update_end_tabs(victory, applied_rewards)
 
 func _style_end_panel_result(victory: bool) -> void:
-	var accent := Color(0.38, 1.0, 0.64) if victory else Color(1.0, 0.34, 0.24)
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.08, 0.09, 0.115, 0.985)
-	panel_style.border_width_left = 1
-	panel_style.border_width_top = 1
-	panel_style.border_width_right = 1
-	panel_style.border_width_bottom = 1
-	panel_style.border_color = accent
-	panel_style.corner_radius_top_left = 8
-	panel_style.corner_radius_top_right = 8
-	panel_style.corner_radius_bottom_right = 8
-	panel_style.corner_radius_bottom_left = 8
-	panel_style.shadow_color = Color(0.0, 0.0, 0.0, 0.55)
-	panel_style.shadow_size = 14
-	_end_panel.add_theme_stylebox_override("panel", panel_style)
-	_end_title.add_theme_color_override("font_color", accent)
-
-	var button_normal := _end_button_style(accent.darkened(0.35), accent)
-	var button_hover := _end_button_style(accent.darkened(0.22), accent.lightened(0.12))
-	var button_pressed := _end_button_style(accent.darkened(0.48), accent)
-	_end_btn.add_theme_stylebox_override("normal", button_normal)
-	_end_btn.add_theme_stylebox_override("hover", button_hover)
-	_end_btn.add_theme_stylebox_override("pressed", button_pressed)
-	_end_btn.add_theme_color_override("font_color", Color(0.96, 0.98, 0.96))
+	_ui_controller.apply_end_panel_style(_end_panel, _end_title, _end_btn, victory)
 
 func _end_button_style(bg_color: Color, border_color: Color) -> StyleBoxFlat:
 	var style := StyleBoxFlat.new()
@@ -1251,12 +1194,43 @@ func _end_result_text(victory: bool, applied_rewards: Dictionary) -> String:
 	if consequence != "":
 		sections.append(consequence)
 	sections.append(_end_rewards_text(victory, applied_rewards))
+	var death_text := _end_death_text()
+	if death_text != "":
+		sections.append(death_text)
 	sections.append(_end_unit_summary_text())
 	sections.append(_end_stats_text())
+	var replay_text: String = _end_replay_text()
+	if replay_text != "":
+		sections.append(replay_text)
 	var lessons_text: String = _end_lessons_text()
 	if lessons_text != "":
 		sections.append(lessons_text)
 	return "\n\n".join(sections)
+
+func _update_end_tabs(victory: bool, applied_rewards: Dictionary) -> void:
+	if _end_detail != null:
+		_end_detail.text = "\n\n".join([
+			_end_context_text(victory),
+			_end_stats_text(),
+			_end_replay_text()
+		]).strip_edges()
+	if _end_heroes_detail != null:
+		_end_heroes_detail.text = _end_unit_summary_text()
+	if _end_enemies_detail != null:
+		_end_enemies_detail.text = _end_enemy_summary_text()
+	if _end_rewards_detail != null:
+		var reward_lines: PackedStringArray = []
+		var consequence := _battle_context.consequence_text(victory)
+		if consequence != "":
+			reward_lines.append(consequence)
+		reward_lines.append(_end_rewards_text(victory, applied_rewards))
+		_end_rewards_detail.text = "\n\n".join(reward_lines)
+	if _end_lessons_detail != null:
+		var lessons := _end_lessons_text()
+		_end_lessons_detail.text = lessons if lessons != "" else "Уроки: нет новых наблюдений."
+	if _end_deaths_detail != null:
+		var death_text := _end_death_text()
+		_end_deaths_detail.text = death_text if death_text != "" else "Павшие: нет."
 
 func _end_context_text(victory: bool) -> String:
 	var detail_suffix := ""
@@ -1293,22 +1267,61 @@ func _end_unit_summary_text() -> String:
 	for unit in _units:
 		if unit.side != BattleUnit.UnitSide.ALLY:
 			continue
-		if unit.is_alive():
-			lines.append("%s: %d/%d HP" % [
-				_short_name(unit.display_name),
-				unit.battle_unit.current_hp,
-				unit.battle_unit.max_hp
-			])
-		else:
-			lines.append("%s: выбыл" % [_short_name(unit.display_name)])
+		if not unit.is_alive():
+			continue
+		lines.append("%s: %d/%d HP" % [
+			_short_name(unit.display_name),
+			unit.battle_unit.current_hp,
+			unit.battle_unit.max_hp
+		])
 	if lines.is_empty():
-		return "Отряд: нет данных."
-	return "Отряд:\n%s" % "\n".join(lines)
+		return "Выжившие: нет."
+	return "Выжившие:\n%s" % "\n".join(lines)
+
+func _end_enemy_summary_text() -> String:
+	var alive_lines: PackedStringArray = []
+	var defeated_lines: PackedStringArray = []
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ENEMY:
+			continue
+		var line := "%s: %d/%d HP" % [
+			_short_name(unit.display_name),
+			unit.battle_unit.current_hp,
+			unit.battle_unit.max_hp
+		]
+		if unit.is_alive():
+			alive_lines.append(line)
+		else:
+			defeated_lines.append(_short_name(unit.display_name))
+	var sections: PackedStringArray = []
+	sections.append("Остались:\n%s" % ("\n".join(alive_lines) if not alive_lines.is_empty() else "нет"))
+	sections.append("Выведены:\n%s" % ("\n".join(defeated_lines) if not defeated_lines.is_empty() else "нет"))
+	return "\n\n".join(sections)
+
+func _end_death_text() -> String:
+	var lines: PackedStringArray = []
+	for unit in _units:
+		if unit.side != BattleUnit.UnitSide.ALLY or unit.is_alive():
+			continue
+		var cause: String = str(unit.last_damage_cause)
+		var killer: String = str(unit.last_damage_source_name)
+		var detail: String = cause if cause != "" else "неизвестно"
+		if killer != "":
+			detail = "%s, %s" % [cause, killer]
+		lines.append("%s: погиб (%s)" % [_short_name(unit.display_name), detail])
+	if lines.is_empty():
+		return ""
+	return "Павшие:\n%s" % "\n".join(lines)
 
 func _end_stats_text() -> String:
 	if _last_result != null:
 		return _last_result.stats_text()
 	return "Статистика: нет данных."
+
+func _end_replay_text() -> String:
+	if _last_result != null:
+		return _last_result.replay_summary_text(8)
+	return ""
 
 func _end_lessons_text() -> String:
 	var lines: PackedStringArray = []
@@ -1363,10 +1376,27 @@ func _nearby_living_ally_count(unit, radius_tiles: float) -> int:
 
 func _record_resolver_event(event: Dictionary) -> void:
 	var event_type := str(event.get("type", ""))
-	if event_type not in ["ability_used", "area", "ambush", "damage", "heal", "buff", "status_damage", "step"]:
+	if event_type not in ["ability_used", "area", "ambush", "damage", "heal", "buff", "status_damage", "step", "terrain_destroyed", "door_opened", "trap_avoided"]:
 		return
 	if event_type == "step":
 		_play_step_cue(int(event.get("tile", BattlefieldScript.TileType.FLOOR)))
+		return
+	if event_type == "door_opened":
+		var door_user = event.get("attacker", null)
+		var door_pos: Vector2i = event.get("tile_pos", Vector2i.ZERO)
+		var door_world: Vector2 = _battlefield.world_from_grid(door_pos, MAP_ORIGIN)
+		_add_visual_effect("ring", door_world, door_world, Color(0.76, 0.9, 1.0), 0.32, 15.0)
+		_add_floating_text(door_world + Vector2(0, -18), "дверь", Color(0.76, 0.9, 1.0), 0.8, Vector2(0, -22))
+		_play_audio_cue("door")
+		if door_user != null:
+			_record_timeline("terrain", "%s открывает дверь" % door_user.display_name, 1)
+		return
+	if event_type == "trap_avoided":
+		var trap_target = event.get("target", null)
+		if trap_target != null:
+			_add_floating_text(trap_target.world_position + Vector2(0, -24), "обошёл", Color(0.72, 1.0, 0.58), 0.9, Vector2(0, -24))
+			_add_visual_effect("ring", trap_target.world_position, trap_target.world_position, Color(0.72, 1.0, 0.58), 0.28, 14.0)
+			_play_audio_cue("step")
 		return
 	if event_type == "status_damage":
 		var status_target = event.get("target", null)
@@ -1390,6 +1420,16 @@ func _record_resolver_event(event: Dictionary) -> void:
 		if ability != null:
 			var ability_name := ability.name
 			_battle_ability_usage[ability_name] = int(_battle_ability_usage.get(ability_name, 0)) + 1
+			if attacker.side == BattleUnit.UnitSide.ALLY:
+				_record_timeline("ability", "%s использует %s" % [attacker.display_name, ability_name], 1)
+		return
+	if event_type == "terrain_destroyed":
+		var tile_pos: Vector2i = event.get("tile_pos", Vector2i.ZERO)
+		var world_pos: Vector2 = _battlefield.world_from_grid(tile_pos, MAP_ORIGIN)
+		_add_visual_effect("ring", world_pos, world_pos, Color(0.86, 0.66, 0.36), 0.52, 20.0)
+		_add_floating_text(world_pos + Vector2(0, -18), "сломано", Color(0.9, 0.72, 0.42), 1.0, Vector2(0, -24))
+		_play_audio_cue("hit")
+		_record_timeline("terrain", "Разрушено препятствие", 1)
 		return
 	if event_type == "area":
 		var center: Vector2 = event.get("center", Vector2.ZERO)
@@ -1411,6 +1451,7 @@ func _record_resolver_event(event: Dictionary) -> void:
 			_add_visual_effect("ring", attacker.world_position, attacker.world_position, Color(0.72, 1.0, 0.36), 0.48, 24.0)
 			_add_floating_text(attacker.world_position + Vector2(0, -30), "засада", Color(0.72, 1.0, 0.36), 1.15, Vector2(0, -26))
 			_play_audio_cue("attack")
+			_record_timeline("ambush", "%s атакует из засады" % attacker.display_name, 2)
 		return
 	if event_type == "damage" and amount > 0 and attacker.character_data != null and not friendly_fire:
 		var char_id: String = attacker.character_data.id
@@ -1445,6 +1486,11 @@ func _record_resolver_event(event: Dictionary) -> void:
 		_play_audio_cue("hit")
 		if not target.is_alive():
 			_add_floating_text(target.world_position + Vector2(0, -32), "выведен", Color(0.95, 0.95, 0.95), 1.4, Vector2(0, -24))
+			_apply_death_shock(target, attacker)
+			if target.side == BattleUnit.UnitSide.ALLY:
+				_play_audio_cue("death")
+				_auto_pause_for_important_event()
+			_record_timeline("death", "%s выведен из боя" % target.display_name, 3 if target.side == BattleUnit.UnitSide.ALLY else 2)
 	elif target != null and event_type == "heal" and amount > 0:
 		_focus_unit_id = target.unit_id
 		_add_visual_effect("line", attacker.world_position, target.world_position, _ability_event_color(ability, event_type), 0.28, 0.0)
@@ -1457,6 +1503,32 @@ func _record_resolver_event(event: Dictionary) -> void:
 		_add_visual_effect("ring", target.world_position, target.world_position, _ability_event_color(ability, event_type), 0.5, 21.0)
 		_add_floating_text(target.world_position + Vector2(0, -18), label, Color(0.45, 0.82, 1.0), 1.05, Vector2(0, -24))
 		_play_audio_cue("buff")
+
+func _apply_death_shock(dead_unit, attacker) -> void:
+	if dead_unit == null or dead_unit.death_shock_emitted:
+		return
+	dead_unit.death_shock_emitted = true
+	for unit in _units:
+		if unit == dead_unit or not unit.is_alive():
+			continue
+		var distance: float = Vector2(unit.grid_pos - dead_unit.grid_pos).length()
+		if unit.side == dead_unit.side:
+			var shock: float = clampf(0.18 - distance * 0.018, 0.04, 0.18)
+			if dead_unit.is_leader:
+				shock += 0.16
+			elif distance <= 3.5:
+				shock += 0.05
+			if unit.is_leader:
+				shock *= 0.78
+			unit.fear = clampf(unit.fear + shock, 0.0, 1.0)
+			unit.morale = clampf(unit.morale - shock * 0.72, 0.0, 1.0)
+			if unit.morale <= 0.12:
+				unit.add_status("broken", 3.0)
+			elif unit.fear >= 0.72:
+				unit.add_status("panic", 2.2)
+		elif attacker != null and attacker == unit:
+			unit.fear = clampf(unit.fear - 0.04, 0.0, 1.0)
+			unit.morale = clampf(unit.morale + 0.04, 0.0, 1.0)
 
 func _add_character_action_score(char_id: String, action_name: String, amount: int) -> void:
 	if char_id == "":
@@ -1821,7 +1893,7 @@ func _draw_unit_token(unit, font: Font) -> void:
 		draw_circle(badge_center, 5.0, Color(1.0, 0.78, 0.25))
 		draw_string(font, badge_center + Vector2(-4, 3), "L", HORIZONTAL_ALIGNMENT_CENTER, 8, 7, Color(0.08, 0.06, 0.02))
 
-	draw_string(font, center + Vector2(-9, 5), _unit_icon(unit), HORIZONTAL_ALIGNMENT_CENTER, 18, 12, Color(0.98, 0.98, 0.92))
+	_draw_unit_icon(center, unit, Color(0.98, 0.98, 0.92))
 
 func _draw_unit_shape(center: Vector2, unit, outline_color: Color, base_color: Color) -> void:
 	match _unit_shape(unit):
@@ -1859,6 +1931,46 @@ func _draw_unit_shape(center: Vector2, unit, outline_color: Color, base_color: C
 		_:
 			draw_circle(center, 16.0, outline_color)
 			draw_circle(center, 12.0, base_color)
+
+func _draw_unit_icon(center: Vector2, unit, color: Color) -> void:
+	if unit.side != BattleUnit.UnitSide.ALLY:
+		if unit.battle_unit != null and unit.battle_unit.max_hp >= 70:
+			draw_arc(center, 7.0, PI * 0.12, PI * 1.88, 20, color, 2.0, true)
+			draw_line(center + Vector2(-5, 4), center + Vector2(5, 4), color, 2.0)
+		elif unit.battle_unit != null and unit.battle_unit.max_hp >= 40:
+			draw_line(center + Vector2(0, -8), center + Vector2(7, 5), color, 2.0)
+			draw_line(center + Vector2(7, 5), center + Vector2(-7, 5), color, 2.0)
+			draw_line(center + Vector2(-7, 5), center + Vector2(0, -8), color, 2.0)
+		else:
+			draw_line(center + Vector2(-7, -4), center + Vector2(0, 7), color, 2.0)
+			draw_line(center + Vector2(7, -4), center + Vector2(0, 7), color, 2.0)
+		return
+	match _unit_class_id(unit):
+		"healer":
+			draw_line(center + Vector2(-7, 0), center + Vector2(7, 0), color, 2.4)
+			draw_line(center + Vector2(0, -7), center + Vector2(0, 7), color, 2.4)
+		"mage":
+			var gem := PackedVector2Array([
+				center + Vector2(0, -8),
+				center + Vector2(8, 0),
+				center + Vector2(0, 8),
+				center + Vector2(-8, 0)
+			])
+			draw_polyline(gem, color, 2.0, true)
+			draw_circle(center, 2.5, color)
+		"scout", "assassin":
+			draw_line(center + Vector2(-7, 5), center + Vector2(0, -7), color, 2.2)
+			draw_line(center + Vector2(0, -7), center + Vector2(7, 5), color, 2.2)
+			draw_line(center + Vector2(-3, 3), center + Vector2(3, 3), color, 1.8)
+		"defender", "guardian", "tank":
+			draw_line(center + Vector2(-7, -6), center + Vector2(7, -6), color, 2.0)
+			draw_line(center + Vector2(7, -6), center + Vector2(5, 5), color, 2.0)
+			draw_line(center + Vector2(5, 5), center + Vector2(0, 8), color, 2.0)
+			draw_line(center + Vector2(0, 8), center + Vector2(-5, 5), color, 2.0)
+			draw_line(center + Vector2(-5, 5), center + Vector2(-7, -6), color, 2.0)
+		_:
+			draw_line(center + Vector2(-6, 7), center + Vector2(7, -6), color, 2.2)
+			draw_line(center + Vector2(2, -7), center + Vector2(8, -1), color, 1.8)
 
 func _draw_intent_badge(unit) -> void:
 	var center: Vector2 = unit.world_position + Vector2(18, -18)
@@ -2063,6 +2175,8 @@ func _intent_label(intent: String) -> String:
 			return "напор"
 		"hold_line":
 			return "держит линию"
+		"hold_choke":
+			return "проход"
 		"safe_los":
 			return "позиция"
 		"panic_seek_ally":
@@ -2155,6 +2269,7 @@ func _refresh_focus_panel() -> void:
 	var status_text := "статусы: %s" % ", ".join(statuses) if not statuses.is_empty() else "статусы: нет"
 	var task_text := "задача: %s" % unit.current_task
 	var resource_text := "ресурсы: E%.0f S%.0f M%.0f" % [unit.energy, unit.stamina, unit.mana]
+	var reason_text := _current_action_reason_text(unit)
 	var debug_text := ""
 	if _debug_perception_overlay:
 		debug_text = "\n" + _decision_debug_text(unit)
@@ -2169,9 +2284,37 @@ func _refresh_focus_panel() -> void:
 		task_text,
 		resource_text,
 		status_text,
-		unit.intent_reason,
+		reason_text,
 		debug_text
 	]
+
+func _current_action_reason_text(unit) -> String:
+	if unit == null:
+		return ""
+	var target_part := ""
+	if unit.target_name != "":
+		target_part = " -> %s" % _short_name(unit.target_name)
+	var action_text: String = unit.intent_ability_name if unit.intent == "ability" and unit.intent_ability_name != "" else _intent_label(unit.intent)
+	var reason: String = unit.intent_reason
+	match unit.intent:
+		"ability":
+			if unit.intent_ability_name != "":
+				action_text = unit.intent_ability_name
+			if unit.target_name != "":
+				return "%s%s, потому что %s" % [action_text, target_part, reason]
+		"attack", "chase", "press_attack", "berserk_charge":
+			if unit.target_name != "":
+				return "%s %s, потому что %s" % [action_text, _short_name(unit.target_name), reason]
+		"retreat", "group_retreat", "break_contact", "panic_seek_ally":
+			return "%s, потому что %s" % [action_text, reason]
+		"take_cover", "safe_los", "keep_distance":
+			if unit.target_name != "":
+				return "%s от %s, потому что %s" % [action_text, _short_name(unit.target_name), reason]
+		_:
+			pass
+	if reason == "":
+		return action_text + target_part
+	return "%s%s, потому что %s" % [action_text, target_part, reason]
 
 func _refresh_unit_list() -> void:
 	var ally_lines: PackedStringArray = []
@@ -2272,6 +2415,8 @@ func _intent_badge(intent: String) -> String:
 			return ">"
 		"hold_line":
 			return "H"
+		"hold_choke":
+			return "K"
 		"safe_los":
 			return "V"
 		"panic_seek_ally":
@@ -2327,6 +2472,8 @@ func _intent_float_label(intent: String) -> String:
 			return "напор"
 		"hold_line":
 			return "линия"
+		"hold_choke":
+			return "проход"
 		"safe_los":
 			return "позиция"
 		"panic_seek_ally":
@@ -2382,6 +2529,8 @@ func _intent_color(intent: String) -> Color:
 			return Color(1.0, 0.62, 0.22)
 		"hold_line":
 			return Color(0.42, 0.92, 0.82)
+		"hold_choke":
+			return Color(0.5, 0.95, 0.82)
 		"safe_los":
 			return Color(0.52, 0.82, 1.0)
 		"panic_seek_ally":
@@ -2431,6 +2580,18 @@ func _on_speed_pressed() -> void:
 	_time_scale = float(_combat_config.speed_modes[_speed_index])
 	_fast_forward_to_end = false
 	_speed_btn.text = _speed_label()
+	_refresh_status()
+
+func _on_auto_pause_pressed() -> void:
+	_auto_pause_important = not _auto_pause_important
+	_auto_pause_btn.text = "Автопауза on" if _auto_pause_important else "Автопауза off"
+	_refresh_status()
+
+func _auto_pause_for_important_event() -> void:
+	if not _auto_pause_important or _battle_finished or _fast_forward_to_end:
+		return
+	_paused = true
+	_pause_btn.text = "Продолжить"
 	_refresh_status()
 
 func _on_freeze_pressed() -> void:
@@ -2492,6 +2653,7 @@ func _restart_training_battle() -> void:
 	_speed_btn.disabled = false
 	_pause_btn.text = "Пауза"
 	_freeze_btn.text = "AI"
+	_auto_pause_btn.text = "Автопауза on" if _auto_pause_important else "Автопауза off"
 	_fast_finish_btn.text = "До конца"
 	_speed_btn.text = _speed_label()
 	_end_panel.visible = false

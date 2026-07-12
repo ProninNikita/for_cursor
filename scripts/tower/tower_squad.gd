@@ -6,6 +6,7 @@ extends Control
 const HUB_SCENE := "res://scenes/hub/hub.tscn"
 const TOWER_LOBBY_SCENE := "res://scenes/tower/tower_lobby.tscn"
 const COMBAT_SCENE := "res://scenes/combat_rt/combat_rt.tscn"
+const ENEMY_ARCHETYPES_PATH := "res://data/rt_enemies.json"
 const CombatContextScript = preload("res://scripts/combat_rt/rt_combat_context.gd")
 
 var _is_elevation: bool = false  ## Это Возвышение?
@@ -18,6 +19,7 @@ var _target_floor: int = 1  ## Целевой этаж для Возвышени
 
 var _checks: Dictionary = {} ## char_id -> CheckBox
 var _ordered_ids: Array[String] = []
+var _enemy_archetypes: Dictionary = {}
 
 
 func _ready() -> void:
@@ -26,7 +28,7 @@ func _ready() -> void:
 	start_btn.pressed.connect(_on_start)
 
 	# Проверяем, это Возвышение или обычный бой
-	_is_elevation = GameState.pending_tower_floor > 0
+	_is_elevation = GameState.is_tower_elevation and GameState.pending_tower_floor > 0
 	_target_floor = GameState.pending_tower_floor if _is_elevation else 1
 
 	# Обновляем UI в зависимости от режима
@@ -77,6 +79,7 @@ func _rebuild_list() -> void:
 	hint_label.text = "Отметь от 1 до 5 героев и нажми «В бой»."
 
 func _add_elevation_preview() -> void:
+	_enemy_archetypes = _load_enemy_archetypes()
 	var floor_data := GameState.tower_elevation.get_floor_data(_target_floor)
 	var context = CombatContextScript.new()
 	context.combat_type = CombatContextScript.CombatType.TOWER
@@ -102,10 +105,11 @@ func _add_elevation_preview() -> void:
 
 	var label := Label.new()
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	label.text = "%s\n%s\nВраги: %s\nНаграда: %s" % [
+	label.text = "%s\n%s\nВраги: %s\nПрогноз: %s\nНаграда: %s" % [
 		context.floor_name,
 		context.threat_text(),
 		_format_enemy_plan(context.enemy_plan),
+		_squad_danger_forecast(context),
 		_format_rewards(context.reward_data)
 	]
 	margin.add_child(label)
@@ -115,10 +119,66 @@ func _format_enemy_plan(enemy_plan: Array) -> String:
 	for entry in enemy_plan:
 		if not (entry is Dictionary):
 			continue
-		parts.append("%s x%d" % [str(entry.get("type", "enemy")), int(entry.get("count", 1))])
+		var enemy_type := str(entry.get("type", "enemy"))
+		parts.append("%s x%d" % [_enemy_display_name(enemy_type), int(entry.get("count", 1))])
 	if parts.is_empty():
 		return "нет данных"
 	return ", ".join(parts)
+
+func _enemy_display_name(enemy_type: String) -> String:
+	var archetype: Dictionary = _enemy_archetypes.get(enemy_type, {})
+	return str(archetype.get("name", enemy_type))
+
+func _squad_danger_forecast(context) -> String:
+	var enemy_danger: float = _enemy_plan_danger(context.enemy_plan) * context.modifier_float("enemy_scale", 1.0)
+	var squad_power: float = _available_squad_power()
+	if squad_power <= 0.0:
+		return "нет данных по отряду"
+	var ratio: float = enemy_danger / squad_power
+	if ratio < 0.42:
+		return "низкая угроза"
+	if ratio < 0.68:
+		return "осторожно, возможны ранения"
+	if ratio < 0.94:
+		return "опасно, нужен сильный состав"
+	return "смертельно опасно"
+
+func _enemy_plan_danger(enemy_plan: Array) -> float:
+	var total := 0.0
+	for entry in enemy_plan:
+		if not (entry is Dictionary):
+			continue
+		var enemy_type := str(entry.get("type", "enemy"))
+		var archetype: Dictionary = _enemy_archetypes.get(enemy_type, {})
+		total += float(archetype.get("danger", 1.0)) * float(int(entry.get("count", 1)))
+	return total
+
+func _available_squad_power() -> float:
+	var power := 0.0
+	var count := 0
+	for hero in GameState.roster.get_characters():
+		if count >= 5:
+			break
+		power += (
+			float(hero.get_max_hp()) / 18.0
+			+ float(hero.stats.get("atk", 0)) / 3.2
+			+ float(hero.stats.get("def", 0)) / 4.0
+			+ float(hero.stats.get("magic", 0)) / 3.2
+			+ float(hero.get_initiative()) / 5.0
+		)
+		count += 1
+	return power
+
+func _load_enemy_archetypes() -> Dictionary:
+	var file := FileAccess.open(ENEMY_ARCHETYPES_PATH, FileAccess.READ)
+	if file == null:
+		return {}
+	var parsed = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not (parsed is Dictionary):
+		return {}
+	var data: Dictionary = parsed
+	return data.get("enemies", {})
 
 func _format_rewards(rewards: Dictionary) -> String:
 	var parts: PackedStringArray = []
@@ -177,6 +237,7 @@ func _on_start() -> void:
 func _on_back() -> void:
 	# Очищаем временные данные
 	GameState.pending_tower_floor = 0
+	GameState.is_tower_elevation = false
 
 	# Возвращаемся в соответствующее меню
 	if _is_elevation:

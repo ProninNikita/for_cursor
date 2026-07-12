@@ -91,7 +91,8 @@ func save_game(slot: int, playtime_seconds: float = 0.0) -> bool:
 		"characters": characters_data,
 		"tower_elevation": GameState.tower_elevation.to_dict() if GameState.tower_elevation else {},
 		"active_raid": GameState.active_raid.to_dict() if GameState.active_raid else null,
-		"completed_raids": GameState.completed_raids
+		"completed_raids": GameState.completed_raids,
+		"fallen_heroes": GameState.get_fallen_heroes()
 	}
 	
 	var path = get_save_path(slot)
@@ -142,6 +143,10 @@ func load_game(slot: int) -> bool:
 	for raid_entry in data.get("completed_raids", []):
 		if raid_entry is Dictionary:
 			GameState.completed_raids.append(raid_entry)
+	GameState.clear_fallen_heroes()
+	for fallen_entry in data.get("fallen_heroes", []):
+		if fallen_entry is Dictionary:
+			GameState.record_fallen_hero(fallen_entry)
 	GameState.clear_combat_history()
 
 	return true
@@ -164,3 +169,4 @@ func start_new_game() -> void:
 	GameState.active_raid = null
 	GameState.completed_raids.clear()
 	GameState.clear_combat_history()
+	GameState.clear_fallen_heroes()

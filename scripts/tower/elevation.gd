@@ -140,6 +140,7 @@ func _on_floor_selected(floor_num: int) -> void:
 
 	# Переходим к выбору отряда
 	GameState.pending_tower_floor = floor_num
+	GameState.is_tower_elevation = true
 	get_tree().change_scene_to_file(TOWER_SQUAD_SCENE)
 
 func _on_back() -> void:

@@ -1,6 +1,18 @@
 class_name RTUtilityBrain
 extends RefCounted
 
+const BrainSurvivalScript = preload("res://scripts/combat_rt/brain/rt_brain_survival.gd")
+const BrainCombatScript = preload("res://scripts/combat_rt/brain/rt_brain_combat.gd")
+const BrainFormationScript = preload("res://scripts/combat_rt/brain/rt_brain_formation.gd")
+const BrainClassBehaviorScript = preload("res://scripts/combat_rt/brain/rt_brain_class_behavior.gd")
+const BrainAbilityTargetingScript = preload("res://scripts/combat_rt/brain/rt_brain_ability_targeting.gd")
+
+var _survival = BrainSurvivalScript.new()
+var _combat = BrainCombatScript.new()
+var _formation = BrainFormationScript.new()
+var _class_behavior = BrainClassBehaviorScript.new()
+var _ability_targeting = BrainAbilityTargetingScript.new()
+
 func choose_intent(unit, units: Array, battlefield, rng: RandomNumberGenerator) -> Dictionary:
 	if not unit.is_alive():
 		return _intent("dead", "не может действовать")
@@ -14,6 +26,9 @@ func choose_intent(unit, units: Array, battlefield, rng: RandomNumberGenerator) 
 	var has_last_contact := not last_contact.is_empty()
 	var last_contact_pos: Vector2i = last_contact.get("pos", unit.grid_pos)
 	var has_noise_contact: bool = unit.heard_noise_timer > 0.0
+	if unit.has_status("broken") or unit.morale <= 0.08:
+		var broken_intent := _broken_intent(unit, nearest_enemy, nearest_ally, battlefield)
+		return _decorate_decision(broken_intent, [broken_intent], 0.28, 0.0)
 	var hp: float = unit.hp_ratio()
 	var aggression: float = unit.brain_value("aggression")
 	var caution: float = unit.brain_value("caution")
@@ -21,6 +36,21 @@ func choose_intent(unit, units: Array, battlefield, rng: RandomNumberGenerator) 
 	var self_preserve: float = unit.brain_value("self_preserve")
 	var cover_usage: float = unit.brain_value("cover_usage")
 	var focus_fire: float = unit.brain_value("focus_fire")
+	var envelope := _class_behavior.apply_personality_envelope(unit, {
+		"aggression": aggression,
+		"caution": caution,
+		"teamwork": teamwork,
+		"self_preserve": self_preserve,
+		"cover_usage": cover_usage,
+		"focus_fire": focus_fire,
+		"skill_patience": unit.brain_value("skill_patience")
+	})
+	aggression = float(envelope.get("aggression", aggression))
+	caution = float(envelope.get("caution", caution))
+	teamwork = float(envelope.get("teamwork", teamwork))
+	self_preserve = float(envelope.get("self_preserve", self_preserve))
+	cover_usage = float(envelope.get("cover_usage", cover_usage))
+	focus_fire = float(envelope.get("focus_fire", focus_fire))
 	match unit.squad_style:
 		"aggressive":
 			aggression = clampf(aggression + 0.12, 0.0, 1.0)
@@ -37,7 +67,7 @@ func choose_intent(unit, units: Array, battlefield, rng: RandomNumberGenerator) 
 	var alone_fear: float = _alone_fear(unit, nearest_ally)
 	var threat_fear: float = _threat_fear(unit, visible_enemies)
 	var visibility_fear: float = _visibility_fear(unit, nearest_ally)
-	var panic: float = clampf((1.0 - hp) * self_preserve + unit.fear * 0.7 + pain_fear + alone_fear + threat_fear + visibility_fear - unit.morale * 0.45, 0.0, 1.0)
+	var panic: float = _survival.panic_score(unit, hp, self_preserve, pain_fear, alone_fear, threat_fear, visibility_fear)
 	var squad_focus = _squad_focus_target(unit, visible_enemies)
 	if squad_focus != null:
 		nearest_enemy = squad_focus
@@ -48,10 +78,8 @@ func choose_intent(unit, units: Array, battlefield, rng: RandomNumberGenerator) 
 
 	if nearest_enemy != null:
 		var enemy_distance: float = _grid_distance(unit.grid_pos, nearest_enemy.grid_pos)
-		var attack_score: float = aggression * 1.35 + focus_fire * (1.0 - nearest_enemy.hp_ratio()) - panic * 0.7
 		var is_focus_target: bool = unit.squad_focus_target_id != "" and nearest_enemy.unit_id == unit.squad_focus_target_id
-		if is_focus_target:
-			attack_score += focus_fire * 0.55 + teamwork * 0.18
+		var attack_score: float = _combat.attack_score(unit, nearest_enemy, aggression, focus_fire, panic, is_focus_target)
 
 		var class_combat_intent: Dictionary = _class_combat_intent(unit, class_id, nearest_enemy, nearest_ally, allies, battlefield, aggression, caution, teamwork, panic, alone_fear, visibility_fear)
 		if not class_combat_intent.is_empty():
@@ -104,6 +132,10 @@ func choose_intent(unit, units: Array, battlefield, rng: RandomNumberGenerator) 
 			if guard_pos != unit.grid_pos:
 				var guard_score: float = teamwork * 0.55 + caution * 0.28 + unit.brain_value("leader_trust") * 0.18 + collapse_pressure * 0.45 - panic * 0.18
 				best = _pick_better(best, _consider_intent(unit, _intent("guard_ally", "прикрывает слабую линию", guard_pos, guard_score, nearest_enemy), candidates))
+
+		var choke_intent: Dictionary = _formation.choke_point_intent(unit, nearest_enemy, battlefield, teamwork, caution, panic)
+		if not choke_intent.is_empty():
+			best = _pick_better(best, _consider_intent(unit, choke_intent, candidates))
 
 		if _is_support_role(unit) and _support_reposition_needed(unit, nearest_enemy):
 			var support_pos: Vector2i = _support_backline_position(unit, nearest_enemy, allies, battlefield)
@@ -411,12 +443,12 @@ func _targets_for_ability(unit, ability: AbilityData, allies: Array, visible_ene
 			var enemy = _weakest_in_range(unit, visible_enemies, ability, battlefield)
 			if enemy != null:
 				if _offensive_area_ability(ability):
-					result = _best_enemy_area_targets(unit, visible_enemies, ability, battlefield, enemy)
+					result = _best_enemy_area_targets(unit, visible_enemies, ability, battlefield, allies, enemy)
 				else:
 					result.append(enemy)
 		AbilityData.TargetType.ALL_ENEMIES:
 			if _offensive_area_ability(ability):
-				result = _best_enemy_area_targets(unit, visible_enemies, ability, battlefield)
+				result = _best_enemy_area_targets(unit, visible_enemies, ability, battlefield, allies)
 			else:
 				for enemy in visible_enemies:
 					if _target_in_ability_range(unit, enemy, ability, battlefield):
@@ -432,7 +464,14 @@ func _offensive_area_ability(ability: AbilityData) -> bool:
 		AbilityData.AbilityType.SPECIAL
 	]
 
-func _best_enemy_area_targets(unit, visible_enemies: Array, ability: AbilityData, battlefield, preferred_center = null) -> Array:
+func _best_enemy_area_targets(
+	unit,
+	visible_enemies: Array,
+	ability: AbilityData,
+	battlefield,
+	allies: Array = [],
+	preferred_center = null
+) -> Array:
 	var best_targets: Array = []
 	var best_score: float = -INF
 	var centers: Array = []
@@ -458,10 +497,28 @@ func _best_enemy_area_targets(unit, visible_enemies: Array, ability: AbilityData
 				continue
 			cluster.append(enemy)
 			cluster_score += 1.0 + (1.0 - enemy.hp_ratio()) * 0.45
+		cluster_score -= _area_friendly_fire_penalty(unit, center, allies, ability, battlefield)
 		if cluster_score > best_score:
 			best_targets = cluster
 			best_score = cluster_score
 	return best_targets
+
+func _area_friendly_fire_penalty(unit, center, allies: Array, ability: AbilityData, battlefield) -> float:
+	if ability == null or ability.rt_radius_tiles <= 0.0 or center == null:
+		return 0.0
+	var penalty := 0.0
+	var friendlies: Array = allies.duplicate()
+	friendlies.append(unit)
+	for ally in friendlies:
+		if ally == null or not ally.is_alive():
+			continue
+		if _grid_distance(center.grid_pos, ally.grid_pos) > ability.rt_radius_tiles:
+			continue
+		if not battlefield.has_line_of_sight(center.grid_pos, ally.grid_pos):
+			continue
+		var hp_pressure: float = 1.0 + (1.0 - ally.hp_ratio()) * 1.4
+		penalty += hp_pressure * (0.9 + unit.brain_value("teamwork") * 0.55 + unit.brain_value("caution") * 0.35)
+	return penalty * _ability_targeting.friendly_fire_penalty_multiplier(unit)
 
 func _weakest_in_range(unit, candidates: Array, ability: AbilityData, battlefield):
 	var best = null
@@ -566,6 +623,21 @@ func _class_intent_bonus(unit, intent: Dictionary) -> float:
 			pass
 
 	return bonus
+
+func _broken_intent(unit, nearest_enemy, nearest_ally, battlefield) -> Dictionary:
+	if nearest_ally != null:
+		var ally_pos: Vector2i = battlefield.find_position_near(unit.grid_pos, nearest_ally.grid_pos, 1, 4)
+		if ally_pos != unit.grid_pos:
+			return _intent("panic_seek_ally", "сломлен и ищет союзника", ally_pos, 1.2, nearest_ally)
+	if nearest_enemy != null:
+		return _intent(
+			"group_retreat",
+			"сломлен и отступает от угрозы",
+			_retreat_position(unit, nearest_enemy, battlefield),
+			1.1,
+			nearest_enemy
+		)
+	return _intent("hold", "сломлен и не решается действовать", unit.grid_pos, 0.8)
 
 func _ability_fit_bonus(unit, intent: Dictionary) -> float:
 	var intent_type := str(intent.get("type", "hold"))

@@ -5,6 +5,10 @@ var rng: RandomNumberGenerator = RandomNumberGenerator.new()
 var _events: Array[Dictionary] = []
 var active_units: Array = []
 var damage_multiplier: float = 0.82
+var trap_damage_base: int = 2
+var poison_damage_multiplier: float = 1.0
+var friendly_fire_multiplier: float = 0.55
+var area_damage_multiplier: float = 1.0
 
 func update_unit(unit, delta: float, intent: Dictionary, battlefield, map_origin: Vector2) -> Array[String]:
 	_events.clear()
@@ -89,7 +93,7 @@ func _action_from_intent(unit, intent: Dictionary) -> Dictionary:
 				"target": target,
 				"signature": _action_signature(intent_type, destination, target, null)
 			}
-		"chase", "retreat", "take_cover", "follow", "patrol", "ambush", "keep_distance", "flank", "guard_ally", "support_backline", "rally_leader", "group_retreat", "formation", "press_attack", "hold_line", "safe_los", "panic_seek_ally", "scout_probe", "scout_flank", "break_contact", "assassin_pickoff", "berserk_charge", "tactical_position":
+		"chase", "retreat", "take_cover", "follow", "patrol", "ambush", "keep_distance", "flank", "guard_ally", "support_backline", "rally_leader", "group_retreat", "formation", "press_attack", "hold_line", "hold_choke", "safe_los", "panic_seek_ally", "scout_probe", "scout_flank", "break_contact", "assassin_pickoff", "berserk_charge", "tactical_position":
 			return {
 				"kind": "flee" if intent_type in ["retreat", "group_retreat", "break_contact", "panic_seek_ally"] else "move",
 				"intent_type": intent_type,
@@ -164,7 +168,7 @@ func _process_attack_action(unit, action: Dictionary, delta: float, battlefield,
 	if target == null or not target.is_alive():
 		unit.current_action.clear()
 		return []
-	if _grid_distance(unit.grid_pos, target.grid_pos) > unit.attack_range_tiles:
+	if _grid_distance(unit.grid_pos, target.grid_pos) > _attack_range_for(unit, battlefield):
 		return _move_towards(unit, target.grid_pos, delta, battlefield, map_origin, true)
 	var messages := _try_attack(unit, target, battlefield)
 	if not messages.is_empty():
@@ -191,7 +195,7 @@ func _try_attack(attacker, target, battlefield) -> Array[String]:
 	var messages: Array[String] = []
 	if attacker.attack_timer > 0.0:
 		return messages
-	if _grid_distance(attacker.grid_pos, target.grid_pos) > attacker.attack_range_tiles:
+	if _grid_distance(attacker.grid_pos, target.grid_pos) > _attack_range_for(attacker, battlefield):
 		return messages
 	if not _spend_attack_resources(attacker):
 		attacker.action_recovery_timer = maxf(attacker.action_recovery_timer, 0.25)
@@ -213,12 +217,13 @@ func _try_attack(attacker, target, battlefield) -> Array[String]:
 		raw = attacker.get_stat("magic") - target.get_stat("def") / 3
 	var damage: int = maxi(1, raw + rng.randi_range(-1, 2))
 	damage = maxi(1, int(round(float(damage) * _coordination_multiplier(attacker, target))))
+	damage = maxi(1, int(round(float(damage) * _height_accuracy_multiplier(attacker, target, battlefield))))
 	var ambush_multiplier: float = _ambush_multiplier(attacker, target, battlefield)
 	if ambush_multiplier > 1.0:
 		damage = maxi(1, int(round(float(damage) * ambush_multiplier)))
 		_reveal_after_ambush(attacker, target, damage)
 	damage = _scaled_damage(damage)
-	target.take_damage(damage)
+	target.take_damage(damage, attacker.display_name, "", "attack", attacker.side)
 	_reveal_after_offensive_action(attacker)
 	attacker.fear = clampf(attacker.fear - 0.04, 0.0, 1.0)
 	attacker.morale = clampf(attacker.morale + 0.03, 0.0, 1.0)
@@ -245,6 +250,23 @@ func _basic_attack_ability(unit) -> AbilityData:
 		if ability.cooldown_max == 0 and ability.type == AbilityData.AbilityType.DAMAGE:
 			return ability
 	return null
+
+func _attack_range_for(unit, battlefield) -> float:
+	var range_tiles: float = unit.attack_range_tiles
+	if battlefield != null and battlefield.is_height(unit.grid_pos):
+		range_tiles += 0.55
+	return range_tiles
+
+func _height_accuracy_multiplier(attacker, target, battlefield) -> float:
+	if attacker == null or target == null or battlefield == null:
+		return 1.0
+	var attacker_high: bool = battlefield.is_height(attacker.grid_pos)
+	var target_high: bool = battlefield.is_height(target.grid_pos)
+	if attacker_high and not target_high:
+		return 1.12
+	if target_high and not attacker_high:
+		return 0.92
+	return 1.0
 
 func _can_use_ability_now(user, ability: AbilityData, targets: Array, battlefield) -> bool:
 	if not user.can_use_ability(ability) or targets.is_empty():
@@ -383,15 +405,24 @@ func _apply_damage_ability(user, target, ability: AbilityData, battlefield, frie
 		raw = max(raw, 1)
 	var damage: int = maxi(1, raw + rng.randi_range(-1, 2))
 	damage = maxi(1, int(round(float(damage) * _coordination_multiplier(user, target))))
+	damage = maxi(1, int(round(float(damage) * _height_accuracy_multiplier(user, target, battlefield))))
+	if ability.rt_radius_tiles > 0.0:
+		damage = maxi(1, roundi(float(damage) * clampf(area_damage_multiplier, 0.55, 1.4)))
 	var ambush_multiplier: float = _ambush_multiplier(user, target, battlefield)
 	if ambush_multiplier > 1.0:
 		damage = maxi(1, int(round(float(damage) * ambush_multiplier)))
 		messages.append("%s атакует из засады." % user.display_name)
 		_reveal_after_ambush(user, target, damage)
 	if friendly_fire:
-		damage = maxi(1, roundi(float(damage) * 0.55))
+		damage = maxi(1, roundi(float(damage) * clampf(friendly_fire_multiplier, 0.25, 0.9)))
 	damage = _scaled_damage(damage)
-	target.take_damage(damage)
+	target.take_damage(
+		damage,
+		user.display_name,
+		ability.name,
+		"friendly_fire" if friendly_fire else "ability",
+		user.side
+	)
 	user.fear = clampf(user.fear - 0.05, 0.0, 1.0)
 	user.morale = clampf(user.morale + 0.04, 0.0, 1.0)
 	if friendly_fire:
@@ -407,10 +438,31 @@ func _apply_damage_ability(user, target, ability: AbilityData, battlefield, frie
 		"ability": ability,
 		"friendly_fire": friendly_fire
 	})
+	_damage_destructibles_near(user, target.grid_pos, ability, battlefield)
 	_apply_secondary_effects(user, target, ability, damage)
 	if not target.is_alive():
 		messages.append("%s выведен из боя." % target.display_name)
 	return messages
+
+func _damage_destructibles_near(user, center: Vector2i, ability: AbilityData, battlefield) -> void:
+	if ability == null or battlefield == null:
+		return
+	var radius := ceili(maxf(0.0, ability.rt_radius_tiles))
+	if radius <= 0:
+		return
+	var amount := maxi(1, int(round(float(user.get_stat(ability.stat_used)) * maxf(0.25, ability.power) * 0.35)))
+	for y in range(center.y - radius, center.y + radius + 1):
+		for x in range(center.x - radius, center.x + radius + 1):
+			var pos := Vector2i(x, y)
+			if Vector2(pos - center).length() > float(radius):
+				continue
+			if battlefield.damage_destructible(pos, amount):
+				_events.append({
+					"type": "terrain_destroyed",
+					"attacker": user,
+					"tile_pos": pos,
+					"ability": ability
+				})
 
 func _apply_heal_ability(user, target, ability: AbilityData) -> Array[String]:
 	var before: int = target.battle_unit.current_hp
@@ -467,8 +519,15 @@ func _apply_secondary_effects(user, target, ability: AbilityData, damage: int) -
 		elif effect == "cleanse":
 			target.clear_negative_statuses()
 		elif effect.begins_with("poison_"):
-			var poison_damage := maxi(1, int(effect.get_slice("_", 1)))
-			target.add_status("poison", 5.0, {"damage": poison_damage, "tick_timer": 1.0})
+			var poison_damage := maxi(1, int(round(float(effect.get_slice("_", 1)) * clampf(poison_damage_multiplier, 0.45, 1.8))))
+			target.add_status("poison", 5.0, {
+				"damage": poison_damage,
+				"tick_timer": 1.0,
+				"source_name": user.display_name,
+				"ability_name": ability.name,
+				"cause": "poison",
+				"source_side": user.side
+			})
 		elif effect.begins_with("lifesteal_") and damage > 0:
 			var percent: float = float(effect.get_slice("_", 1)) / 100.0
 			var healed: int = int(round(float(damage) * percent))
@@ -593,30 +652,67 @@ func _move_towards(
 			return messages
 		next_grid = panic_step
 		unit.destination = panic_step
-		unit.path = [panic_step]
+		var panic_path: Array[Vector2i] = []
+		panic_path.append(panic_step)
+		unit.path = panic_path
 		messages.append("%s сбивается с пути из-за паники." % unit.display_name)
+
+	if _should_avoid_detected_trap(unit, next_grid, movement_destination, battlefield):
+		var alternate_step: Vector2i = _alternate_step_around_trap(unit, next_grid, movement_destination, battlefield)
+		if alternate_step != unit.grid_pos and alternate_step != next_grid:
+			next_grid = alternate_step
+			unit.destination = alternate_step
+			unit.path.clear()
+			var alternate_path: Array[Vector2i] = []
+			alternate_path.append(alternate_step)
+			unit.path = alternate_path
+			messages.append("%s обходит замеченную ловушку." % unit.display_name)
 
 	var next_world: Vector2 = battlefield.world_from_grid(next_grid, map_origin)
 	var to_next: Vector2 = next_world - unit.world_position
 	var distance: float = to_next.length()
 	if distance <= 1.0:
+		if battlefield.is_door(next_grid):
+			if battlefield.open_door(next_grid):
+				unit.action_recovery_timer = maxf(unit.action_recovery_timer, 0.18)
+				_events.append({
+					"type": "door_opened",
+					"attacker": unit,
+					"tile_pos": next_grid
+				})
+				messages.append("%s открывает дверь." % unit.display_name)
+				return messages
 		var previous_grid: Vector2i = unit.grid_pos
 		unit.grid_pos = next_grid
 		unit.world_position = next_world
 		unit.path.remove_at(0)
 		battlefield.move_occupant(previous_grid, next_grid, unit.unit_id)
 		unit.path_fail_count = 0
+		if battlefield.is_height(previous_grid) and not battlefield.is_height(next_grid):
+			messages.append_array(_maybe_apply_height_fall(unit, previous_grid, next_grid, battlefield))
 		if battlefield.is_trap(next_grid):
-			var trap_damage := 2
-			unit.take_damage(trap_damage)
-			unit.add_status("panic", 1.2)
-			_events.append({
-				"type": "status_damage",
-				"status": "trap",
-				"target": unit,
-				"amount": trap_damage
-			})
-			messages.append("%s попадает в ловушку." % unit.display_name)
+			var trigger_chance: float = battlefield.trap_trigger_chance(next_grid, unit.side)
+			if rng.randf() >= trigger_chance:
+				_events.append({
+					"type": "trap_avoided",
+					"target": unit,
+					"tile_pos": next_grid
+				})
+				messages.append("%s аккуратно проходит ловушку." % unit.display_name)
+			else:
+				var trap_damage := maxi(1, trap_damage_base)
+				if battlefield.is_trap_detected(next_grid, unit.side):
+					trap_damage = maxi(1, int(round(float(trap_damage) * 0.6)))
+				trap_damage = _scaled_damage(trap_damage)
+				unit.take_damage(trap_damage, "Ловушка", "", "trap", -1)
+				unit.add_status("panic", 1.2)
+				_events.append({
+					"type": "status_damage",
+					"status": "trap",
+					"target": unit,
+					"amount": trap_damage
+				})
+				messages.append("%s попадает в ловушку." % unit.display_name)
 		if battlefield.is_noisy(next_grid):
 			unit.heard_noise_strength = maxf(unit.heard_noise_strength, 0.7)
 		_events.append({
@@ -716,6 +812,54 @@ func _best_recovery_destination(unit, destination: Vector2i, battlefield) -> Vec
 			continue
 		return neighbor
 	return unit.grid_pos
+
+func _should_avoid_detected_trap(unit, next_grid: Vector2i, destination: Vector2i, battlefield) -> bool:
+	if battlefield == null or not battlefield.is_trap(next_grid):
+		return false
+	if not battlefield.is_trap_detected(next_grid, unit.side):
+		return false
+	if unit.intent in ["retreat", "group_retreat", "panic_seek_ally", "berserk_charge"]:
+		return false
+	if next_grid == destination and unit.visible_enemies.is_empty():
+		return false
+	return true
+
+func _alternate_step_around_trap(unit, trap_pos: Vector2i, destination: Vector2i, battlefield) -> Vector2i:
+	var best: Vector2i = unit.grid_pos
+	var best_score := INF
+	for candidate in battlefield.get_neighbors(unit.grid_pos):
+		if candidate == trap_pos:
+			continue
+		if battlefield.is_occupied(candidate, unit.unit_id):
+			continue
+		if battlefield.is_trap(candidate) and battlefield.is_trap_detected(candidate, unit.side):
+			continue
+		var score: float = _grid_distance(candidate, destination) + battlefield.movement_cost(candidate) * 0.25
+		if score < best_score:
+			best = candidate
+			best_score = score
+	return best
+
+func _maybe_apply_height_fall(unit, previous_grid: Vector2i, next_grid: Vector2i, battlefield) -> Array[String]:
+	var messages: Array[String] = []
+	var fear: float = clampf(unit.fear, 0.0, 1.0)
+	var speed_pressure: float = maxf(0.0, float(unit.get_stat("speed")) - 5.0) * 0.012
+	var chance: float = clampf(0.03 + fear * 0.08 + speed_pressure, 0.02, 0.16)
+	if rng.randf() >= chance:
+		return messages
+	var fall_damage := _scaled_damage(1)
+	unit.take_damage(fall_damage, "Падение с высоты", "", "fall", -1)
+	unit.add_status("stun", 0.35)
+	_events.append({
+		"type": "status_damage",
+		"status": "fall",
+		"target": unit,
+		"amount": fall_damage,
+		"from": previous_grid,
+		"to": next_grid
+	})
+	messages.append("%s неудачно спускается с высоты." % unit.display_name)
+	return messages
 
 func _movement_speed_multiplier(unit) -> float:
 	var fear: float = clampf(unit.fear, 0.0, 1.0)

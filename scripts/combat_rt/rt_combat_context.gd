@@ -1,6 +1,8 @@
 class_name RTCombatContext
 extends RefCounted
 
+const FloorModifiersScript = preload("res://scripts/combat_rt/rt_floor_modifiers.gd")
+
 enum CombatType { DEMO, TOWER, RAID }
 
 var combat_type: int = CombatType.DEMO
@@ -64,6 +66,7 @@ func setup_from_game_state() -> void:
 	arena_id = "training_ruins"
 	enemy_plan = [
 		{"type": "goblin", "count": 3},
+		{"type": "goblin_coward", "count": 1},
 		{"type": "goblin_scout", "count": 1},
 		{"type": "orc", "count": 1}
 	]
@@ -121,35 +124,43 @@ func consequence_text(victory: bool) -> String:
 
 func _setup_demo_rules() -> void:
 	combat_modifiers = {
-		"enemy_scale": 1.1,
-		"damage_taken_multiplier": 0.68,
+		"enemy_scale": 1.58,
+		"damage_taken_multiplier": 0.56,
 		"reward_multiplier": 1.0,
+		"trap_damage": 2.0,
+		"poison_damage_multiplier": 0.9,
+		"friendly_fire_multiplier": 0.5,
+		"area_damage_multiplier": 0.92,
 		"retreat_enabled": true,
 		"heavy_loss_threshold": 0.34,
 		"decision_interval": 0.36,
 		"max_log_lines": 16
 	}
 	victory_conditions = {"type": "eliminate_enemies"}
-	defeat_conditions = {"type": "collapse", "retreat_after_seconds": 16.0}
+	defeat_conditions = {"type": "collapse", "retreat_after_seconds": 16.0, "time_limit_seconds": 80.0}
 	threat_summary = PackedStringArray(["учебная арена", "низкая смертность"])
 	consequence_summary = PackedStringArray(["тренировочный бой не выдаёт штрафов кроме потерянного HP"])
 
 func _setup_tower_rules() -> void:
-	var floor: int = max(1, tower_floor)
-	var raw_modifiers: Dictionary = floor_data.get("modifiers", {})
-	combat_modifiers = {
-		"enemy_scale": 1.0 + float(floor - 1) * 0.06,
-		"damage_taken_multiplier": clampf(0.70 + float(floor - 1) * 0.02, 0.70, 1.05),
-		"reward_multiplier": 1.0 + float(floor - 1) * 0.08,
+	var floor_num: int = maxi(1, tower_floor)
+	var raw_modifiers = floor_data.get("modifiers", {})
+	var default_modifiers := {
+		"enemy_scale": 1.0,
+		"damage_taken_multiplier": 0.70,
+		"reward_multiplier": 1.0,
+		"trap_damage": 2.0,
+		"poison_damage_multiplier": 1.0,
+		"friendly_fire_multiplier": 0.55,
+		"area_damage_multiplier": 1.0,
 		"retreat_enabled": true,
-		"heavy_loss_threshold": clampf(0.36 - float(floor - 1) * 0.012, 0.24, 0.36),
-		"decision_interval": clampf(0.38 - float(floor - 1) * 0.006, 0.28, 0.38),
+		"heavy_loss_threshold": 0.36,
+		"decision_interval": 0.38,
 		"max_log_lines": 18
 	}
-	_merge_dictionary(combat_modifiers, raw_modifiers)
+	combat_modifiers = FloorModifiersScript.with_defaults(default_modifiers, raw_modifiers).to_dictionary()
 	victory_conditions = floor_data.get("victory", {"type": "eliminate_enemies"}).duplicate(true)
 	defeat_conditions = floor_data.get("defeat", {"type": "collapse", "retreat_after_seconds": 14.0}).duplicate(true)
-	threat_summary = _tower_threat_summary(floor)
+	threat_summary = _tower_threat_summary(floor_num)
 	consequence_summary = PackedStringArray(["попытка этажа засчитана", "награда не выдаётся", "выжившие возвращаются с текущим HP"])
 
 func _setup_raid_rules() -> void:
@@ -158,6 +169,10 @@ func _setup_raid_rules() -> void:
 		"enemy_scale": difficulty,
 		"damage_taken_multiplier": clampf(0.70 + (difficulty - 1.0) * 0.12, 0.62, 1.1),
 		"reward_multiplier": 1.0,
+		"trap_damage": 2.0,
+		"poison_damage_multiplier": 1.0,
+		"friendly_fire_multiplier": 0.55,
+		"area_damage_multiplier": 1.0,
 		"retreat_enabled": true,
 		"heavy_loss_threshold": 0.3,
 		"decision_interval": 0.34,

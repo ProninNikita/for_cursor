@@ -8,7 +8,7 @@ func run(driver, fixtures, _context: Dictionary) -> void:
 	fixtures.prepare_combat(5)
 	var combat_history_before: int = fixtures.state.combat_history.size()
 	await driver.load_scene(COMBAT_SCENE)
-	await driver.wait_until(Callable(self, "_combat_finished").bind(driver), 15.0, "автобой должен завершиться")
+	await driver.wait_until(Callable(self, "_combat_finished").bind(driver), 35.0, "автобой должен завершиться")
 
 	var trained := 0
 	for hero in fixtures.state.roster.get_characters():

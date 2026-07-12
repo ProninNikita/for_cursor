@@ -15,7 +15,11 @@ const SCENES := [
 	},
 	{
 		"path": "res://scenes/mansion/mansion.tscn",
-		"qa_ids": ["mansion.back"]
+		"qa_ids": ["mansion.back", "mansion.fallen"]
+	},
+	{
+		"path": "res://scenes/mansion/hall_of_fame.tscn",
+		"qa_ids": ["hall.back"]
 	},
 	{
 		"path": "res://scenes/tower/tower_lobby.tscn",
